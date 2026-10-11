@@ -1,0 +1,17 @@
+{
+  "name": "Jornada Bíblica 365",
+  "short_name": "JornadaBíblica",
+  "description": "Estudo Diário de Toda a Bíblia e Biblioteca Pessoal",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0e17",
+  "theme_color": "#d4af37",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23111726'/><text x='50' y='68' font-size='60' text-anchor='middle'>📖</text></svg>",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
