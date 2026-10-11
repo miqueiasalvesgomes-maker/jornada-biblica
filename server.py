@@ -19,8 +19,6 @@ if hasattr(sys.stdout, 'reconfigure'):
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
-from whatsapp_bot import WhatsAppBot, format_whatsapp_message, get_direct_whatsapp_url
-
 PORT = int(os.environ.get("PORT", 5000))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
@@ -28,12 +26,72 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "study.db")
 JSON_PLAN_PATH = os.path.join(DATA_DIR, "bible_plan.json")
 
-# Carrega o plano de leitura em memória
+# Se os dados não existirem (ex: não subiu a pasta data no GitHub), gera automaticamente
+if not os.path.exists(JSON_PLAN_PATH) or not os.path.exists(DB_PATH):
+    import generate_plan
+    generate_plan.init_database_and_json()
+
 with open(JSON_PLAN_PATH, "r", encoding="utf-8") as f:
     BIBLE_PLAN = json.load(f)
 
-# Instância do bot do WhatsApp
-whatsapp_bot = WhatsAppBot()
+try:
+    from whatsapp_bot import WhatsAppBot, format_whatsapp_message, get_direct_whatsapp_url
+    whatsapp_bot = WhatsAppBot()
+except Exception:
+    class DummyBot:
+        session_dir = ""
+        def is_logged_in(self): return False
+        def open_for_login(self): return {"success": False, "message": "Bot local não disponível em nuvem."}
+        def send_message(self, *a, **kw): return {"success": False, "message": "Use o link direto pelo celular."}
+    whatsapp_bot = DummyBot()
+
+    def format_whatsapp_message(day_data, books_data=None, user_name="Irmão(ã)"):
+        day = day_data.get("day", 1)
+        reading = day_data.get("reading", "")
+        testament = day_data.get("testament", "")
+        category = day_data.get("category", "")
+        theme = day_data.get("theme", "")
+        verse_text = day_data.get("key_verse_text", "")
+        verse_ref = day_data.get("key_verse_ref", "")
+        reflection = day_data.get("reflection", "")
+        msg_lines = [
+            f"📖 *JORNADA BÍBLICA 365* 🕊️",
+            f"━━━━━━━━━━━━━━━━━━",
+            f"Olá, *{user_name}*! Aqui está o seu estudo bíblico de hoje:",
+            f"",
+            f"📅 *Dia {day} de 365* | *{reading}*",
+            f"📌 *Seção:* {category} ({testament})",
+            f"✨ *Tema Central:* _{theme}_",
+            f"",
+            f"📜 *Versículo em Destaque:*",
+            f"_{verse_text}_",
+            f"— *{verse_ref}*",
+            f"",
+            f"💡 *Reflexão para o seu Dia:*",
+            f"{reflection}",
+        ]
+        if books_data and len(books_data) > 0:
+            msg_lines.append("")
+            msg_lines.append("📚 *Leitura Recomendada da sua Biblioteca:*")
+            for b in books_data[:2]:
+                msg_lines.append(f"• _{b.get('title')}_ ({b.get('author')})")
+        msg_lines.extend([
+            "",
+            "🎯 *Perguntas para Fixação:*",
+            "1. O que este texto revela sobre o caráter de Deus?",
+            "2. Como posso aplicar este princípio hoje na minha rotina?",
+            "",
+            "━━━━━━━━━━━━━━━━━━",
+            "_“Lâmpada para os meus pés é a tua palavra.” (Sl 119:105)_"
+        ])
+        return "\n".join(msg_lines)
+
+    def get_direct_whatsapp_url(phone_number, message_text):
+        clean_phone = "".join(filter(str.isdigit, phone_number or ""))
+        encoded_text = urllib.parse.quote(message_text)
+        if clean_phone:
+            return f"https://web.whatsapp.com/send?phone={clean_phone}&text={encoded_text}"
+        return f"https://web.whatsapp.com/send?text={encoded_text}"
 
 
 def get_db_connection():
