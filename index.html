@@ -52,6 +52,10 @@
           <span class="nav-icon">📊</span>
           <span class="nav-label">Meu Progresso</span>
         </button>
+        <button class="nav-btn" data-tab="tab-members" id="nav-members-btn" role="tab" aria-selected="false">
+          <span class="nav-icon">👥</span>
+          <span class="nav-label">Membros</span>
+        </button>
         <button class="nav-btn" data-tab="tab-whatsapp" id="nav-whatsapp-btn" role="tab" aria-selected="false">
           <span class="nav-icon">💬</span>
           <span class="nav-label">WhatsApp</span>
@@ -59,6 +63,12 @@
       </nav>
 
       <div class="header-actions">
+        <button class="user-profile-badge" id="header-user-btn" title="Alternar perfil de estudo" aria-label="Perfil ativo">
+          <span class="user-avatar" id="header-user-avatar">🕊️</span>
+          <span class="user-name" id="header-user-name">Miqueias</span>
+          <span class="user-caret">▾</span>
+        </button>
+
         <div class="streak-badge" id="streak-badge" title="Dias seguidos de estudo">
           <span class="fire-anim">🔥</span>
           <span id="header-streak-count">0</span>
@@ -315,20 +325,71 @@
       </div>
     </section>
 
+    <!-- ================= SEÇÃO: MEMBROS DO GRUPO DE ESTUDO ================= -->
+    <section id="tab-members" class="tab-pane" role="tabpanel">
+      <div class="section-header-banner">
+        <div>
+          <h2 class="page-title">Membros da Jornada Bíblica</h2>
+          <p class="page-description">Compartilhe o estudo com amigos, família ou seu grupo da igreja. Cada membro tem seu próprio ritmo, progresso e anotações isoladas!</p>
+        </div>
+        <button class="btn btn-primary" id="open-add-member-modal-btn">
+          <span>➕</span> Novo Membro
+        </button>
+      </div>
+
+      <!-- GRID DE MEMBROS -->
+      <div class="members-grid-container" id="members-list-grid">
+        <!-- Renderizado dinamicamente via JS -->
+      </div>
+    </section>
+
     <!-- ================= SEÇÃO 5: CONFIGURAÇÕES & WHATSAPP ================= -->
     <section id="tab-whatsapp" class="tab-pane" role="tabpanel">
       <div class="section-header-banner">
         <div>
           <h2 class="page-title">Integração com WhatsApp</h2>
-          <p class="page-description">Receba o lembrete diário com a leitura bíblica, o tema, versículo e reflexão direto no seu celular.</p>
+          <p class="page-description">Compartilhe no grupo da igreja/família ou envie automaticamente para cada membro cadastrado.</p>
+        </div>
+      </div>
+
+      <!-- BANNER DE DESTAQUE: COMPARTILHAR NO GRUPO -->
+      <div class="group-share-banner">
+        <div class="group-share-content">
+          <div class="group-share-badge">👥 GRUPO DO WHATSAPP</div>
+          <h3 class="group-share-title">Envie a Leitura de Hoje para o Grupo de Estudo Bíblico</h3>
+          <p class="group-share-desc">Com 1 clique, abra o WhatsApp com a mensagem formatada para compartilhar na sua célula, grupo de jovens, família ou ministério.</p>
+        </div>
+        <div class="group-share-actions">
+          <a href="#" target="_blank" id="group-wa-link" class="btn btn-whatsapp btn-lg">
+            <span>📲</span> Compartilhar no Grupo do WhatsApp
+          </a>
+        </div>
+      </div>
+
+      <!-- ENVIO INDIVIDUAL PARA CADA MEMBRO -->
+      <div class="card-glass members-broadcast-card">
+        <div class="card-header-flex">
+          <div>
+            <h3 class="card-title">
+              <span class="icon">📢</span> Envio para os Membros Cadastrados
+            </h3>
+            <p class="card-subtitle">Dispare a mensagem do dia de cada participante para o número de WhatsApp dele:</p>
+          </div>
+          <button class="btn btn-primary" id="broadcast-all-members-btn">
+            <span>🚀</span> Disparar para Todos os Membros
+          </button>
+        </div>
+
+        <div class="whatsapp-members-list" id="whatsapp-members-list">
+          <!-- Lista dinâmica de membros e links diretos -->
         </div>
       </div>
 
       <div class="whatsapp-layout-grid">
-        <!-- FORMULÁRIO DE CONFIGURAÇÃO -->
+        <!-- FORMULÁRIO DE CONFIGURAÇÃO DO PERFIL ATUAL -->
         <div class="card-glass whatsapp-config-card">
           <h3 class="card-title">
-            <span class="icon">⚙️</span> Dados de Envio & Lembretes
+            <span class="icon">⚙️</span> Meu Perfil & Notificações
           </h3>
 
           <form id="settings-form" class="standard-form">
@@ -339,13 +400,13 @@
 
             <div class="form-group">
               <label for="cfg-phone">Número de WhatsApp (com DDD):</label>
-              <input type="tel" id="cfg-phone" placeholder="Ex: 11987654321 (apenas números)" required>
+              <input type="tel" id="cfg-phone" placeholder="Ex: 11987654321 (apenas números)">
               <small class="helper-text">Insira seu DDD e número celular (ex: 11987654321).</small>
             </div>
 
             <div class="form-group">
               <label for="cfg-time">Horário Preferido do Lembrete Diário:</label>
-              <input type="time" id="cfg-time" value="07:00" required>
+              <input type="time" id="cfg-time" value="07:00">
             </div>
 
             <div class="form-group">
@@ -362,9 +423,9 @@
           <!-- SEÇÃO DO BOT LOCAL COM QR CODE -->
           <div class="bot-control-box">
             <h4 class="box-subtitle">
-              <span class="icon">🤖</span> Bot Local Automatizado (Playwright)
+              <span class="icon">🤖</span> Bot Automatizado (Agendador)
             </h4>
-            <p class="bot-desc">O bot roda localmente no seu computador e utiliza sua sessão do WhatsApp Web sem nenhum custo de API.</p>
+            <p class="bot-desc">Roda em segundo plano para disparar no horário agendado de cada membro cadastrado.</p>
             
             <div class="bot-status-indicator" id="bot-status-container">
               <span class="status-badge-bot" id="bot-status-badge">Verificando sessão...</span>
@@ -372,10 +433,10 @@
 
             <div class="bot-buttons-row">
               <button class="btn btn-secondary" id="bot-login-btn">
-                <span>📱</span> Conectar com QR Code (Login Único)
+                <span>📱</span> Conectar com QR Code
               </button>
               <button class="btn btn-whatsapp" id="bot-send-now-btn">
-                <span>🚀</span> Disparar Envio Automático Agora
+                <span>🚀</span> Disparar Envio Agora
               </button>
             </div>
           </div>
@@ -384,9 +445,9 @@
         <!-- PRÉVIA REALISTA DO WHATSAPP -->
         <div class="card-glass whatsapp-preview-card">
           <h3 class="card-title">
-            <span class="icon">📱</span> Pré-visualização da Mensagem no WhatsApp
+            <span class="icon">📱</span> Pré-visualização da Mensagem
           </h3>
-          <p class="preview-hint">Esta é a mensagem formatada que será enviada para o seu celular hoje:</p>
+          <p class="preview-hint">Mensagem personalizada do seu estudo diário:</p>
 
           <div class="whatsapp-mockup">
             <div class="whatsapp-bubble" id="whatsapp-message-preview">
@@ -396,7 +457,7 @@
 
           <div class="whatsapp-preview-actions">
             <a href="#" target="_blank" id="direct-wa-link" class="btn btn-whatsapp btn-lg">
-              <span>📲</span> Abrir e Enviar Agora no WhatsApp Web (1-Clique)
+              <span>📲</span> Enviar para Meu WhatsApp (1-Clique)
             </a>
             <button class="btn btn-ghost" id="copy-wa-message-btn">
               <span>📋</span> Copiar Texto da Mensagem
@@ -407,6 +468,34 @@
     </section>
 
   </main>
+
+  <!-- ================= BARRA DE NAVEGAÇÃO INFERIOR PARA SMARTPHONES ================= -->
+  <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="Navegação inferior mobile">
+    <button class="mobile-nav-btn active" data-tab="tab-today">
+      <span class="mobile-nav-icon">✨</span>
+      <span class="mobile-nav-label">Hoje</span>
+    </button>
+    <button class="mobile-nav-btn" data-tab="tab-plan">
+      <span class="mobile-nav-icon">📜</span>
+      <span class="mobile-nav-label">Plano</span>
+    </button>
+    <button class="mobile-nav-btn" data-tab="tab-library">
+      <span class="mobile-nav-icon">📚</span>
+      <span class="mobile-nav-label">Livros</span>
+    </button>
+    <button class="mobile-nav-btn" data-tab="tab-stats">
+      <span class="mobile-nav-icon">📊</span>
+      <span class="mobile-nav-label">Progresso</span>
+    </button>
+    <button class="mobile-nav-btn" data-tab="tab-members">
+      <span class="mobile-nav-icon">👥</span>
+      <span class="mobile-nav-label">Membros</span>
+    </button>
+    <button class="mobile-nav-btn" data-tab="tab-whatsapp">
+      <span class="mobile-nav-icon">💬</span>
+      <span class="mobile-nav-label">WhatsApp</span>
+    </button>
+  </nav>
 
   <!-- ================= MODAL: CADASTRAR / EDITAR LIVRO ================= -->
   <div id="book-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-hidden="true">
@@ -479,6 +568,79 @@
 
       <div class="modal-body" id="modal-day-body">
         <!-- Preenchido dinamicamente via JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL: CADASTRAR / EDITAR MEMBRO ================= -->
+  <div id="member-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title" id="member-modal-title">Cadastrar Novo Membro</h3>
+        <button class="modal-close-btn" id="close-member-modal-btn" aria-label="Fechar modal">✕</button>
+      </div>
+
+      <form id="member-form" class="standard-form modal-body">
+        <input type="hidden" id="member-id-input">
+
+        <div class="form-group">
+          <label for="member-name-input">Nome do Membro *</label>
+          <input type="text" id="member-name-input" placeholder="Ex: Débora, Daniel, Pr. João..." required>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label for="member-phone-input">WhatsApp (DDD + Número)</label>
+            <input type="tel" id="member-phone-input" placeholder="Ex: 5511999998888">
+            <small class="helper-text">Para envio direto de lembretes diários.</small>
+          </div>
+          <div class="form-group flex-1">
+            <label for="member-day-input">Dia de Início (1 a 365)</label>
+            <input type="number" id="member-day-input" min="1" max="365" value="1">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Escolha o Ícone / Avatar:</label>
+          <div class="avatar-picker-row" id="avatar-picker-row">
+            <label class="avatar-opt"><input type="radio" name="member_avatar" value="🕊️" checked><span>🕊️</span></label>
+            <label class="avatar-opt"><input type="radio" name="member_avatar" value="👑"><span>👑</span></label>
+            <label class="avatar-opt"><input type="radio" name="member_avatar" value="📖"><span>📖</span></label>
+            <label class="avatar-opt"><input type="radio" name="member_avatar" value="🛡️"><span>🛡️</span></label>
+            <label class="avatar-opt"><input type="radio" name="member_avatar" value="🦁"><span>🦁</span></label>
+            <label class="avatar-opt"><input type="radio" name="member_avatar" value="🌾"><span>🌾</span></label>
+            <label class="avatar-opt"><input type="radio" name="member_avatar" value="⚓"><span>⚓</span></label>
+            <label class="avatar-opt"><input type="radio" name="member_avatar" value="🌟"><span>🌟</span></label>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" id="cancel-member-modal-btn">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="save-member-btn">Salvar Membro</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= MODAL: SELETOR RÁPIDO DE PERFIL ================= -->
+  <div id="switch-profile-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Alternar Perfil de Estudo</h3>
+        <button class="modal-close-btn" id="close-switch-modal-btn" aria-label="Fechar modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+          Selecione quem está estudando agora para carregar o progresso e notas correspondentes:
+        </p>
+        <div class="profiles-quick-list" id="profiles-quick-list">
+          <!-- Renderizado via JS -->
+        </div>
+        <div style="margin-top: 1.5rem; text-align: center;">
+          <button class="btn btn-secondary btn-full" id="btn-quick-new-member">
+            <span>➕</span> Cadastrar Outro Membro
+          </button>
+        </div>
       </div>
     </div>
   </div>

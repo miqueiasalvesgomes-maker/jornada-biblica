@@ -1,10 +1,20 @@
 /**
  * Jornada Bíblica 365 - Frontend Application Logic
- * Gerenciamento reativo de leituras, biblioteca, diário, estatísticas e WhatsApp.
+ * Gerenciamento reativo de leituras, múltiplos membros/perfis, biblioteca, diário, estatísticas e WhatsApp.
  */
+
+// Lê user_id da URL caso compartilhado (ex: ?user_id=2)
+const urlParams = new URLSearchParams(window.location.search);
+const paramUserId = urlParams.get('user_id');
+if (paramUserId) {
+  localStorage.setItem('jb365_user_id', paramUserId);
+}
 
 // Estado global da aplicação
 const state = {
+  currentUserId: parseInt(localStorage.getItem('jb365_user_id') || '1', 10),
+  users: [],
+  currentUser: null,
   currentDay: 1,
   todayDay: 1,
   plan: [],
@@ -28,7 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(err => {
-      console.warn('Service Worker não pôde ser registrado:', err);
+      console.warn('Service Worker não registrado:', err);
     });
   }
 }
@@ -54,6 +64,7 @@ function toggleTheme() {
 
 async function loadInitialData() {
   try {
+    await fetchUsers();
     await Promise.all([
       fetchSettings(),
       fetchTodayData(),
@@ -61,7 +72,7 @@ async function loadInitialData() {
       fetchBooks(),
       fetchWhatsAppPreview()
     ]);
-    // Carrega o plano completo em segundo plano
+    // Carrega o plano completo dos 365 dias
     fetchPlan();
   } catch (err) {
     console.error('Erro ao carregar dados iniciais:', err);
@@ -69,14 +80,21 @@ async function loadInitialData() {
   }
 }
 
-// ================= REQUISIÇÕES DE API =================
+// ================= REQUISIÇÕES DE API TRANSPARENTES (MULTI-USUÁRIO) =================
 async function apiGet(endpoint) {
-  const res = await fetch(`/api${endpoint}`);
+  const url = new URL(`/api${endpoint}`, window.location.origin);
+  if (!url.searchParams.has('user_id') && state.currentUserId) {
+    url.searchParams.set('user_id', state.currentUserId);
+  }
+  const res = await fetch(url.pathname + url.search);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return await res.json();
 }
 
 async function apiPost(endpoint, body = {}) {
+  if (typeof body === 'object' && body !== null && !('user_id' in body) && state.currentUserId) {
+    body.user_id = state.currentUserId;
+  }
   const res = await fetch(`/api${endpoint}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -95,38 +113,239 @@ async function apiPut(endpoint, body = {}) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
   return await res.json();
 }
 
 async function apiDelete(endpoint) {
   const res = await fetch(`/api${endpoint}`, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
   return await res.json();
+}
+
+// ================= GESTÃO DE USUÁRIOS & PERFIS =================
+async function fetchUsers() {
+  try {
+    state.users = await apiGet('/users');
+    let active = state.users.find(u => u.id === state.currentUserId);
+    if (!active && state.users.length > 0) {
+      active = state.users[0];
+      state.currentUserId = active.id;
+      localStorage.setItem('jb365_user_id', active.id);
+    }
+    state.currentUser = active;
+
+    // Atualiza cabeçalho
+    const avatarEl = document.getElementById('header-user-avatar');
+    const nameEl = document.getElementById('header-user-name');
+    if (avatarEl && active) avatarEl.textContent = active.avatar_icon || '🕊️';
+    if (nameEl && active) nameEl.textContent = active.name || 'Membro';
+
+    renderMembers();
+    renderProfileQuickList();
+  } catch (err) {
+    console.warn('Erro ao carregar usuários:', err);
+  }
+}
+
+function renderMembers() {
+  const grid = document.getElementById('members-list-grid');
+  if (!grid) return;
+
+  if (state.users.length === 0) {
+    grid.innerHTML = `<div style="grid-column: 1 / -1; padding: 2rem; color: var(--text-muted); text-align: center;">Nenhum membro cadastrado.</div>`;
+    return;
+  }
+
+  grid.innerHTML = state.users.map(u => {
+    const isActive = u.id === state.currentUserId;
+    const shareUrl = `${window.location.origin}/?user_id=${u.id}`;
+    return `
+      <div class="member-card ${isActive ? 'active-user' : ''}" data-user-id="${u.id}">
+        <div class="member-card-header">
+          <div class="member-avatar-lg">${escapeHtml(u.avatar_icon || '🕊️')}</div>
+          <div class="member-header-info">
+            <h4 class="member-name-heading">${escapeHtml(u.name)}</h4>
+            <span class="member-phone-label">${escapeHtml(u.phone ? `📱 ${u.phone}` : 'Sem WhatsApp')}</span>
+          </div>
+        </div>
+
+        <div class="member-progress-section">
+          <div class="member-progress-labels">
+            <span>Leitura Atual: <strong>Dia ${u.current_day}</strong></span>
+            <span><strong>${u.percentage || 0}%</strong> (${u.completed_count || 0}/365)</span>
+          </div>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-fill fill-gold" style="width: ${u.percentage || 0}%;"></div>
+          </div>
+        </div>
+
+        <div class="member-actions-row">
+          ${!isActive ? `
+            <button class="btn btn-primary btn-sm switch-user-btn" data-id="${u.id}">
+              <span>👤</span> Estudar como ${escapeHtml(u.name.split(' ')[0])}
+            </button>
+          ` : `
+            <button class="btn btn-secondary btn-sm" disabled style="opacity: 0.9;">
+              <span>⭐</span> Perfil Ativo
+            </button>
+          `}
+          <button class="btn btn-ghost btn-sm copy-member-link-btn" data-url="${shareUrl}" title="Copiar link de estudo pessoal">
+            <span>🔗</span> Link
+          </button>
+          <button class="btn btn-ghost btn-sm edit-member-btn" data-id="${u.id}" title="Editar perfil">
+            <span>✏️</span> Editar
+          </button>
+          ${state.users.length > 1 ? `
+            <button class="btn btn-ghost btn-sm delete-member-btn" data-id="${u.id}" style="color: var(--ruby-danger);" title="Excluir membro">
+              <span>🗑️</span>
+            </button>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Eventos de clique nos botões de membro
+  grid.querySelectorAll('.switch-user-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = parseInt(btn.getAttribute('data-id'), 10);
+      switchUser(id);
+    });
+  });
+
+  grid.querySelectorAll('.copy-member-link-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const url = btn.getAttribute('data-url');
+      navigator.clipboard.writeText(url).then(() => {
+        showToast('Link individual copiado! Envie para o membro acessar direto o plano dele.');
+      });
+    });
+  });
+
+  grid.querySelectorAll('.edit-member-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = parseInt(btn.getAttribute('data-id'), 10);
+      openEditMemberModal(id);
+    });
+  });
+
+  grid.querySelectorAll('.delete-member-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = parseInt(btn.getAttribute('data-id'), 10);
+      if (confirm('Tem certeza que deseja remover este membro e seu histórico de leitura?')) {
+        try {
+          await apiDelete(`/users/${id}`);
+          showToast('Membro removido com sucesso!');
+          if (state.currentUserId === id) {
+            state.currentUserId = state.users.find(u => u.id !== id)?.id || 1;
+            localStorage.setItem('jb365_user_id', state.currentUserId);
+          }
+          await loadInitialData();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      }
+    });
+  });
+}
+
+function renderProfileQuickList() {
+  const container = document.getElementById('profiles-quick-list');
+  if (!container) return;
+
+  container.innerHTML = state.users.map(u => {
+    const isActive = u.id === state.currentUserId;
+    return `
+      <div class="profile-quick-item ${isActive ? 'active' : ''}" data-id="${u.id}">
+        <div class="profile-quick-left">
+          <span style="font-size: 1.6rem;">${escapeHtml(u.avatar_icon || '🕊️')}</span>
+          <div>
+            <strong style="color: #fff; font-size: 0.95rem;">${escapeHtml(u.name)}</strong>
+            <div style="font-size: 0.78rem; color: var(--text-muted);">Dia ${u.current_day} de 365 • ${u.completed_count || 0} lidos</div>
+          </div>
+        </div>
+        <div>
+          ${isActive ? '<span style="color: var(--gold-light); font-weight: 800; font-size: 0.8rem;">● ATIVO</span>' : '<span style="color: var(--text-muted); font-size: 0.8rem;">Trocar ➔</span>'}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.querySelectorAll('.profile-quick-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const id = parseInt(item.getAttribute('data-id'), 10);
+      document.getElementById('switch-profile-modal').classList.remove('open');
+      if (id !== state.currentUserId) {
+        switchUser(id);
+      }
+    });
+  });
+}
+
+async function switchUser(userId) {
+  state.currentUserId = userId;
+  localStorage.setItem('jb365_user_id', userId);
+  await loadInitialData();
+  const userName = state.currentUser ? state.currentUser.name : 'Membro';
+  showToast(`Estudo ativo alterado para ${userName}!`);
+}
+
+function openAddMemberModal() {
+  document.getElementById('member-modal-title').textContent = 'Cadastrar Novo Membro';
+  document.getElementById('member-form').reset();
+  document.getElementById('member-id-input').value = '';
+  document.getElementById('member-day-input').value = '1';
+  document.getElementById('member-modal').classList.add('open');
+}
+
+function openEditMemberModal(userId) {
+  const member = state.users.find(u => u.id === userId);
+  if (!member) return;
+
+  document.getElementById('member-modal-title').textContent = 'Editar Membro';
+  document.getElementById('member-id-input').value = member.id;
+  document.getElementById('member-name-input').value = member.name || '';
+  document.getElementById('member-phone-input').value = member.phone || '';
+  document.getElementById('member-day-input').value = member.current_day || 1;
+
+  const radio = document.querySelector(`input[name="member_avatar"][value="${member.avatar_icon}"]`);
+  if (radio) radio.checked = true;
+
+  document.getElementById('member-modal').classList.add('open');
 }
 
 // ================= DADOS =================
 async function fetchSettings() {
   state.settings = await apiGet('/settings');
-  state.currentDay = parseInt(state.settings.current_day || '1', 10);
-  state.todayDay = state.currentDay;
   
-  // Preenche formulário de configurações
+  // Preenche formulário de perfil com os dados do usuário ativo
   const nameInput = document.getElementById('cfg-user-name');
   const phoneInput = document.getElementById('cfg-phone');
   const timeInput = document.getElementById('cfg-time');
   const dayInput = document.getElementById('cfg-current-day');
-  if (nameInput) nameInput.value = state.settings.user_name || '';
-  if (phoneInput) phoneInput.value = state.settings.whatsapp_number || '';
+
+  if (state.currentUser) {
+    if (nameInput) nameInput.value = state.currentUser.name || '';
+    if (phoneInput) phoneInput.value = state.currentUser.phone || '';
+    if (dayInput) dayInput.value = state.currentUser.current_day || '1';
+  } else {
+    if (nameInput) nameInput.value = state.settings.user_name || '';
+    if (phoneInput) phoneInput.value = state.settings.whatsapp_number || '';
+    if (dayInput) dayInput.value = state.settings.current_day || '1';
+  }
   if (timeInput) timeInput.value = state.settings.reminder_time || '07:00';
-  if (dayInput) dayInput.value = state.settings.current_day || '1';
 }
 
 async function fetchTodayData(dayNum = null) {
-  const targetDay = dayNum || state.currentDay;
   const endpoint = dayNum ? `/day/${dayNum}` : '/today';
   const data = await apiGet(endpoint);
-  
   renderTodaySection(data);
 }
 
@@ -150,10 +369,52 @@ async function fetchWhatsAppPreview() {
     const data = await apiGet('/whatsapp/preview');
     const previewEl = document.getElementById('whatsapp-message-preview');
     const directLink = document.getElementById('direct-wa-link');
+    const groupLink = document.getElementById('group-wa-link');
+
     if (previewEl) previewEl.textContent = data.message;
     if (directLink && data.direct_url) directLink.href = data.direct_url;
+    if (groupLink && data.group_url) groupLink.href = data.group_url;
 
-    // Atualiza status do bot
+    // Renderiza lista de membros cadastrados com botão de WhatsApp individual
+    const membersList = document.getElementById('whatsapp-members-list');
+    if (membersList && data.members) {
+      if (data.members.length === 0) {
+        membersList.innerHTML = `<p style="color: var(--text-muted); padding: 1rem;">Nenhum membro cadastrado.</p>`;
+      } else {
+        membersList.innerHTML = data.members.map(m => `
+          <div class="wa-member-row">
+            <div class="wa-member-info">
+              <div class="wa-member-avatar">${escapeHtml(m.avatar_icon || '🕊️')}</div>
+              <div>
+                <div class="wa-member-name">${escapeHtml(m.name)}</div>
+                <div class="wa-member-sub">
+                  ${m.phone ? `📱 ${escapeHtml(m.phone)}` : '<span style="color: var(--amber-warning);">Sem telefone cadastrado</span>'} • Dia ${m.current_day}
+                </div>
+              </div>
+            </div>
+            <div class="wa-member-actions">
+              ${m.individual_wa_url ? `
+                <a href="${m.individual_wa_url}" target="_blank" class="btn btn-whatsapp btn-sm">
+                  <span>📲</span> Enviar para ${escapeHtml(m.name.split(' ')[0])}
+                </a>
+              ` : `
+                <button class="btn btn-secondary btn-sm edit-wa-phone-btn" data-id="${m.id}">
+                  <span>✏️</span> Cadastrar Celular
+                </button>
+              `}
+            </div>
+          </div>
+        `).join('');
+
+        membersList.querySelectorAll('.edit-wa-phone-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const id = parseInt(btn.getAttribute('data-id'), 10);
+            openEditMemberModal(id);
+          });
+        });
+      }
+    }
+
     checkBotStatus();
   } catch (err) {
     console.warn('Não foi possível carregar prévia do WhatsApp:', err);
@@ -169,12 +430,12 @@ async function checkBotStatus() {
         badge.textContent = '🟢 Conectado ao WhatsApp';
         badge.className = 'status-badge-bot connected';
       } else {
-        badge.textContent = '⚪ Sessão desconectada (necessário QR Code)';
+        badge.textContent = '⚪ Bot desativado em nuvem (Envio direto ativo)';
         badge.className = 'status-badge-bot';
       }
     }
   } catch (e) {
-    console.warn(e);
+    // Silencia se em nuvem
   }
 }
 
@@ -210,7 +471,6 @@ function renderTodaySection(data) {
   // Link Bíblia Online
   const readOnlineBtn = document.getElementById('read-online-btn');
   if (readOnlineBtn) {
-    // Busca automática por livro no bibliaonline.com.br
     const bookNameClean = day.reading.split(' ')[0].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     readOnlineBtn.href = `https://www.bibliaonline.com.br/nvi/${bookNameClean}`;
   }
@@ -390,7 +650,6 @@ function renderLibrary() {
     `;
   }).join('');
 
-  // Eventos de editar e excluir
   grid.querySelectorAll('.edit-book-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -545,8 +804,8 @@ function openEditBookModal(bookId) {
 
 // ================= EVENT LISTENERS =================
 function setupEventListeners() {
-  // 1. Navegação de abas
-  document.querySelectorAll('.nav-btn').forEach(btn => {
+  // 1. Navegação de abas (Desktop e Mobile)
+  document.querySelectorAll('.nav-btn, .mobile-nav-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const tabId = btn.getAttribute('data-tab');
       switchTab(tabId);
@@ -557,23 +816,90 @@ function setupEventListeners() {
   const themeBtn = document.getElementById('theme-toggle-btn');
   if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
 
-  // 3. Botão Concluir Hoje
+  // 3. Seletor de Perfil no Topo
+  const userHeaderBtn = document.getElementById('header-user-btn');
+  if (userHeaderBtn) {
+    userHeaderBtn.addEventListener('click', () => {
+      document.getElementById('switch-profile-modal').classList.add('open');
+    });
+  }
+
+  const closeSwitchModalBtn = document.getElementById('close-switch-modal-btn');
+  if (closeSwitchModalBtn) {
+    closeSwitchModalBtn.addEventListener('click', () => {
+      document.getElementById('switch-profile-modal').classList.remove('open');
+    });
+  }
+
+  const quickNewMemberBtn = document.getElementById('btn-quick-new-member');
+  if (quickNewMemberBtn) {
+    quickNewMemberBtn.addEventListener('click', () => {
+      document.getElementById('switch-profile-modal').classList.remove('open');
+      openAddMemberModal();
+    });
+  }
+
+  // 4. Membro Modal (Cadastrar / Editar)
+  const openAddMemberBtn = document.getElementById('open-add-member-modal-btn');
+  if (openAddMemberBtn) openAddMemberBtn.addEventListener('click', openAddMemberModal);
+
+  const closeMemberModalBtn = document.getElementById('close-member-modal-btn');
+  const cancelMemberModalBtn = document.getElementById('cancel-member-modal-btn');
+  if (closeMemberModalBtn) closeMemberModalBtn.addEventListener('click', () => document.getElementById('member-modal').classList.remove('open'));
+  if (cancelMemberModalBtn) cancelMemberModalBtn.addEventListener('click', () => document.getElementById('member-modal').classList.remove('open'));
+
+  const memberForm = document.getElementById('member-form');
+  if (memberForm) {
+    memberForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const memberId = document.getElementById('member-id-input').value;
+      const avatarChecked = document.querySelector('input[name="member_avatar"]:checked');
+      const payload = {
+        name: document.getElementById('member-name-input').value.trim(),
+        phone: document.getElementById('member-phone-input').value.trim(),
+        current_day: parseInt(document.getElementById('member-day-input').value || '1', 10),
+        avatar_icon: avatarChecked ? avatarChecked.value : '🕊️'
+      };
+
+      try {
+        if (memberId) {
+          await apiPut(`/users/${memberId}`, payload);
+          showToast('Membro atualizado com sucesso!');
+        } else {
+          const res = await apiPost('/users', payload);
+          showToast('Novo membro adicionado!');
+          // Se for o primeiro ou recém-criado, pergunta se quer alternar
+          if (res.id) {
+            state.currentUserId = res.id;
+            localStorage.setItem('jb365_user_id', res.id);
+          }
+        }
+        document.getElementById('member-modal').classList.remove('open');
+        await loadInitialData();
+      } catch (err) {
+        showToast('Erro ao salvar membro: ' + err.message, 'error');
+      }
+    });
+  }
+
+  // 5. Botão Concluir Hoje
   const completeBtn = document.getElementById('toggle-complete-btn');
   if (completeBtn) {
     completeBtn.addEventListener('click', async () => {
       try {
         const res = await apiPost(`/day/${state.currentDay}/complete`);
-        showToast(res.new_status === 'completed' ? '🎉 Glória a Deus! Estudo de hoje concluído!' : 'Estudo marcado como pendente.');
+        showToast(res.new_status === 'completed' ? '🎉 Parabéns! Estudo de hoje concluído!' : 'Estudo marcado como pendente.');
         await fetchTodayData();
         await fetchStats();
         await fetchPlan();
+        await fetchUsers(); // Atualiza barra de progresso do usuário
       } catch (e) {
         showToast('Erro ao alternar status do dia.', 'error');
       }
     });
   }
 
-  // 4. Navegação Dia Anterior / Próximo
+  // 6. Navegação Dia Anterior / Próximo
   const prevBtn = document.getElementById('prev-day-btn');
   const nextBtn = document.getElementById('next-day-btn');
   if (prevBtn) {
@@ -591,7 +917,7 @@ function setupEventListeners() {
     });
   }
 
-  // 5. Salvar anotações do diário
+  // 7. Salvar anotações do diário
   const saveNotesBtn = document.getElementById('save-notes-btn');
   if (saveNotesBtn) {
     saveNotesBtn.addEventListener('click', async () => {
@@ -618,7 +944,7 @@ function setupEventListeners() {
       const text = document.getElementById('today-verse-text').textContent.trim();
       const ref = document.getElementById('today-verse-ref').textContent.trim();
       navigator.clipboard.writeText(`"${text}" ${ref}`).then(() => {
-        showToast('Versículo copiado para a área de transferência!');
+        showToast('Versículo copiado!');
       });
     });
   }
@@ -631,7 +957,7 @@ function setupEventListeners() {
     });
   }
 
-  // 6. Filtros do Plano 365
+  // 8. Filtros do Plano 365
   document.querySelectorAll('.filter-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
@@ -658,9 +984,9 @@ function setupEventListeners() {
     });
   }
 
-  // 7. Modais
-  const addBtn = document.getElementById('open-add-book-modal-btn');
-  if (addBtn) addBtn.addEventListener('click', openAddBookModal);
+  // 9. Modais de Livro
+  const addBookBtn = document.getElementById('open-add-book-modal-btn');
+  if (addBookBtn) addBookBtn.addEventListener('click', openAddBookModal);
 
   const closeBookModalBtn = document.getElementById('close-book-modal-btn');
   const cancelBookModalBtn = document.getElementById('cancel-book-modal-btn');
@@ -670,7 +996,7 @@ function setupEventListeners() {
   const closeDayModalBtn = document.getElementById('close-day-modal-btn');
   if (closeDayModalBtn) closeDayModalBtn.addEventListener('click', () => document.getElementById('day-detail-modal').classList.remove('open'));
 
-  // 8. Submit formulário de livro
+  // 10. Submit formulário de livro
   const bookForm = document.getElementById('book-form');
   if (bookForm) {
     bookForm.addEventListener('submit', async (e) => {
@@ -698,33 +1024,53 @@ function setupEventListeners() {
         document.getElementById('book-modal').classList.remove('open');
         await fetchBooks();
         await fetchStats();
-        await fetchTodayData(); // Atualiza livros recomendados de hoje
+        await fetchTodayData();
       } catch (err) {
         showToast('Erro ao salvar livro: ' + err.message, 'error');
       }
     });
   }
 
-  // 9. Configurações & WhatsApp
+  // 11. Salvar configurações do perfil atual
   const settingsForm = document.getElementById('settings-form');
   if (settingsForm) {
     settingsForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const payload = {
-        user_name: document.getElementById('cfg-user-name').value,
-        whatsapp_number: document.getElementById('cfg-phone').value,
-        reminder_time: document.getElementById('cfg-time').value,
-        current_day: document.getElementById('cfg-current-day').value
-      };
+      const currentName = document.getElementById('cfg-user-name').value.trim();
+      const currentPhone = document.getElementById('cfg-phone').value.trim();
+      const currentDayVal = parseInt(document.getElementById('cfg-current-day').value || '1', 10);
 
       try {
-        await apiPost('/settings', payload);
-        showToast('Configurações salvas!');
-        state.currentDay = parseInt(payload.current_day, 10);
-        await fetchTodayData();
-        await fetchWhatsAppPreview();
+        if (state.currentUser) {
+          await apiPut(`/users/${state.currentUser.id}`, {
+            name: currentName,
+            phone: currentPhone,
+            avatar_icon: state.currentUser.avatar_icon || '🕊️',
+            current_day: currentDayVal
+          });
+        }
+        showToast('Perfil e configurações atualizados!');
+        await loadInitialData();
       } catch (err) {
         showToast('Erro ao salvar configurações.', 'error');
+      }
+    });
+  }
+
+  // 12. Disparar Envio em Massa para Todos os Membros
+  const broadcastBtn = document.getElementById('broadcast-all-members-btn');
+  if (broadcastBtn) {
+    broadcastBtn.addEventListener('click', async () => {
+      try {
+        broadcastBtn.disabled = true;
+        broadcastBtn.textContent = '⏳ Disparando...';
+        const res = await apiPost('/whatsapp/broadcast');
+        showToast(res.message);
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        broadcastBtn.disabled = false;
+        broadcastBtn.innerHTML = '<span>🚀</span> Disparar para Todos os Membros';
       }
     });
   }
@@ -733,9 +1079,8 @@ function setupEventListeners() {
   const botLoginBtn = document.getElementById('bot-login-btn');
   if (botLoginBtn) {
     botLoginBtn.addEventListener('click', async () => {
-      showToast('Abrindo janela do WhatsApp Web... Por favor, escaneie o QR Code.');
+      showToast('Abrindo WhatsApp Web para leitura de QR Code...');
       await apiPost('/whatsapp/login');
-      // Checa status após 15 segundos
       setTimeout(checkBotStatus, 15000);
     });
   }
@@ -770,12 +1115,15 @@ function setupEventListeners() {
 function switchTab(tabId) {
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.mobile-nav-btn').forEach(b => b.classList.remove('active'));
 
   const targetPane = document.getElementById(tabId);
   const targetBtn = document.querySelector(`.nav-btn[data-tab="${tabId}"]`);
+  const targetMobileBtn = document.querySelector(`.mobile-nav-btn[data-tab="${tabId}"]`);
 
   if (targetPane) targetPane.classList.add('active');
   if (targetBtn) targetBtn.classList.add('active');
+  if (targetMobileBtn) targetMobileBtn.classList.add('active');
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -800,7 +1148,7 @@ function showToast(message, type = 'success') {
 
 function escapeHtml(str) {
   if (!str) return '';
-  return str.replace(/[&<>'"]/g, 
+  return String(str).replace(/[&<>'"]/g, 
     tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
   );
 }
