@@ -482,6 +482,24 @@ class BibleStudyHandler(http.server.SimpleHTTPRequestHandler):
             })
             return
 
+        # 9. /api/settings -> Configurações do sistema ou do usuário atual
+        if path == "/api/settings":
+            c.execute("SELECT key, value FROM settings")
+            rows = c.fetchall()
+            settings_dict = {row["key"]: row["value"] for row in rows}
+
+            c.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+            u = c.fetchone()
+            if u:
+                settings_dict["user_name"] = u["name"]
+                settings_dict["whatsapp_number"] = u["phone"] or ""
+                settings_dict["current_day"] = str(u["current_day"])
+                settings_dict["reminder_time"] = u["reminder_time"] or "07:00"
+
+            conn.close()
+            self.send_json(settings_dict)
+            return
+
         conn.close()
         self.send_json({"error": "Rota não encontrada"}, 404)
 
@@ -629,6 +647,59 @@ class BibleStudyHandler(http.server.SimpleHTTPRequestHandler):
 
             threading.Thread(target=broadcast_thread, daemon=True).start()
             self.send_json({"success": True, "message": f"Envio iniciado para {len(users)} membros!"})
+            return
+
+        # 6. /api/settings -> Salvar configurações
+        if path == "/api/settings":
+            for k, v in data.items():
+                c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (str(k), str(v)))
+
+            user_id = int(data.get("user_id", 1))
+            name = data.get("user_name")
+            phone = data.get("whatsapp_number")
+            c_day = data.get("current_day")
+            r_time = data.get("reminder_time")
+            if name or phone is not None or c_day:
+                c.execute("""
+                UPDATE users SET 
+                    name = COALESCE(?, name),
+                    phone = COALESCE(?, phone),
+                    current_day = COALESCE(?, current_day),
+                    reminder_time = COALESCE(?, reminder_time)
+                WHERE id = ?
+                """, (name, phone, int(c_day) if c_day else None, r_time, user_id))
+
+            conn.commit()
+            conn.close()
+            self.send_json({"success": True, "message": "Configurações salvas!"})
+            return
+
+        # 7. /api/whatsapp/login -> Abrir bot local para login
+        if path == "/api/whatsapp/login":
+            conn.close()
+            def run_login():
+                whatsapp_bot.open_for_login()
+            threading.Thread(target=run_login, daemon=True).start()
+            self.send_json({"success": True, "message": "Iniciando sessão do WhatsApp Web..."})
+            return
+
+        # 8. /api/whatsapp/send-now -> Disparar envio agora
+        if path == "/api/whatsapp/send-now":
+            user_id = int(data.get("user_id", 1))
+            c.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+            u = c.fetchone()
+            if not u or not u["phone"]:
+                conn.close()
+                self.send_json({"error": "Nenhum telefone cadastrado para o perfil ativo."}, 400)
+                return
+            u_day = next((d for d in BIBLE_PLAN if d["day"] == u["current_day"]), BIBLE_PLAN[0])
+            u_books = get_matching_books(u_day.get("tags", []))
+            u_msg = format_whatsapp_message(u_day, u_books, u["name"])
+            conn.close()
+            def run_send():
+                whatsapp_bot.send_message(u["phone"], u_msg, headless=True)
+            threading.Thread(target=run_send, daemon=True).start()
+            self.send_json({"success": True, "message": f"Envio iniciado para {u['name']}!"})
             return
 
         conn.close()

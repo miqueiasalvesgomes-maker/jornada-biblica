@@ -64,19 +64,17 @@ function toggleTheme() {
 
 async function loadInitialData() {
   try {
-    await fetchUsers();
-    await Promise.all([
+    await fetchUsers().catch(e => console.warn('Aviso users:', e));
+    await Promise.allSettled([
       fetchSettings(),
       fetchTodayData(),
       fetchStats(),
       fetchBooks(),
       fetchWhatsAppPreview()
     ]);
-    // Carrega o plano completo dos 365 dias
-    fetchPlan();
+    fetchPlan().catch(e => console.warn('Aviso plan:', e));
   } catch (err) {
     console.error('Erro ao carregar dados iniciais:', err);
-    showToast('Erro ao carregar dados do servidor.', 'error');
   }
 }
 
@@ -323,8 +321,13 @@ function openEditMemberModal(userId) {
 
 // ================= DADOS =================
 async function fetchSettings() {
-  state.settings = await apiGet('/settings');
-  
+  try {
+    state.settings = await apiGet('/settings');
+  } catch (err) {
+    console.warn('Configurações padrão adotadas:', err);
+    state.settings = {};
+  }
+
   // Preenche formulário de perfil com os dados do usuário ativo
   const nameInput = document.getElementById('cfg-user-name');
   const phoneInput = document.getElementById('cfg-phone');
