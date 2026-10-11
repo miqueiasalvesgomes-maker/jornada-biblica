@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Jornada Bíblica 365 - Plano completo de leitura diária de toda a Bíblia integrado com sua biblioteca de livros e lembretes automáticos via WhatsApp.">
+  <title>Jornada Bíblica 365 | Estudo Diário & Biblioteca Pessoal</title>
+
+  <!-- Google Fonts: Cinzel para títulos nobres e sagrados, Inter para clareza e elegância -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;1,400&display=swap" rel="stylesheet">
+
+  <meta name="theme-color" content="#d4af37">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22><text y=%2226%22 font-size=%2228%22>📖</text></svg>">
+</head>
+<body class="theme-dark">
+  <!-- TOAST NOTIFICATIONS -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- HEADER NAVEGAÇÃO SUPERIOR -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-group">
+        <div class="brand-symbol">
+          <span class="symbol-icon">📖</span>
+        </div>
+        <div class="brand-text">
+          <h1 class="brand-title">Jornada Bíblica 365</h1>
+          <p class="brand-subtitle">Estudo da Palavra & Biblioteca Pessoal</p>
+        </div>
+      </div>
+
+      <nav class="nav-tabs" id="main-nav" role="tablist">
+        <button class="nav-btn active" data-tab="tab-today" id="nav-today-btn" role="tab" aria-selected="true">
+          <span class="nav-icon">✨</span>
+          <span class="nav-label">Estudo de Hoje</span>
+        </button>
+        <button class="nav-btn" data-tab="tab-plan" id="nav-plan-btn" role="tab" aria-selected="false">
+          <span class="nav-icon">📜</span>
+          <span class="nav-label">Plano 365 Dias</span>
+        </button>
+        <button class="nav-btn" data-tab="tab-library" id="nav-library-btn" role="tab" aria-selected="false">
+          <span class="nav-icon">📚</span>
+          <span class="nav-label">Minha Biblioteca</span>
+        </button>
+        <button class="nav-btn" data-tab="tab-stats" id="nav-stats-btn" role="tab" aria-selected="false">
+          <span class="nav-icon">📊</span>
+          <span class="nav-label">Meu Progresso</span>
+        </button>
+        <button class="nav-btn" data-tab="tab-whatsapp" id="nav-whatsapp-btn" role="tab" aria-selected="false">
+          <span class="nav-icon">💬</span>
+          <span class="nav-label">WhatsApp</span>
+        </button>
+      </nav>
+
+      <div class="header-actions">
+        <div class="streak-badge" id="streak-badge" title="Dias seguidos de estudo">
+          <span class="fire-anim">🔥</span>
+          <span id="header-streak-count">0</span>
+          <span class="streak-label">dias</span>
+        </div>
+
+        <button id="theme-toggle-btn" class="icon-circle-btn" title="Alternar Modo Claro / Escuro" aria-label="Alternar tema">
+          <span id="theme-icon">🌙</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- CONTEÚDO PRINCIPAL -->
+  <main class="main-layout">
+
+    <!-- ================= SEÇÃO 1: ESTUDO DE HOJE ================= -->
+    <section id="tab-today" class="tab-pane active" role="tabpanel">
+      <!-- HERO CARD DO DIA -->
+      <div class="hero-study-card">
+        <div class="hero-header-row">
+          <div class="day-indicator">
+            <span class="day-number-tag" id="today-day-tag">Dia 1 de 365</span>
+            <span class="badge-category" id="today-category-tag">Pentateuco • Antigo Testamento</span>
+          </div>
+          <div class="today-status-badge" id="today-status-badge">
+            <span class="status-dot"></span>
+            <span id="today-status-text">Pendente</span>
+          </div>
+        </div>
+
+        <div class="hero-reading-title">
+          <span class="hero-subtext">Passagem Bíblica de Hoje:</span>
+          <h2 class="reading-passage" id="today-reading-passage">Gênesis 1-3</h2>
+          <h3 class="daily-theme" id="today-theme">A Criação, o Éden e o Início da Aliança</h3>
+        </div>
+
+        <!-- VERSÍCULO DO DIA (DESTAQUE MANUSCRITO) -->
+        <div class="verse-highlight-box">
+          <div class="quote-mark">“</div>
+          <blockquote class="verse-text" id="today-verse-text">
+            No princípio, criou Deus os céus e a terra.
+          </blockquote>
+          <cite class="verse-reference" id="today-verse-ref">— Gênesis 1:1</cite>
+          <div class="verse-actions">
+            <button class="btn-sm btn-ghost" id="copy-verse-btn" title="Copiar versículo">
+              <span>📋</span> Copiar Versículo
+            </button>
+            <a href="https://www.bibliaonline.com.br/" target="_blank" rel="noopener noreferrer" class="btn-sm btn-ghost" id="read-online-btn" title="Ler texto bíblico completo na Bíblia Online">
+              <span>📖</span> Abrir Bíblia Completa ↗
+            </a>
+          </div>
+        </div>
+
+        <!-- REFLEXÃO E TEOLOGIA -->
+        <div class="reflection-card">
+          <h4 class="section-subtitle">
+            <span class="icon">💡</span> Reflexão & Compreensão Teológica
+          </h4>
+          <p class="reflection-body" id="today-reflection-text">
+            Carregando reflexão do dia...
+          </p>
+          <div class="tags-container" id="today-tags-list">
+            <!-- Tags renderizadas via JS -->
+          </div>
+        </div>
+
+        <!-- LIVROS CONECTADOS DA BIBLIOTECA -->
+        <div class="connected-books-box">
+          <div class="connected-books-header">
+            <h4 class="section-subtitle">
+              <span class="icon">📚</span> Leitura de Apoio da Sua Biblioteca
+            </h4>
+            <span class="helper-text">Livros da sua estante com temas correspondentes a esta leitura</span>
+          </div>
+          <div class="books-recommendation-grid" id="today-books-grid">
+            <!-- Livros recomendados aparecem aqui -->
+          </div>
+        </div>
+
+        <!-- DIÁRIO DEVOCIONAL / ANOTAÇÕES PESSOAIS -->
+        <div class="journal-entry-card">
+          <div class="journal-header">
+            <h4 class="section-subtitle">
+              <span class="icon">✍️</span> Meu Diário de Estudo & Anotações
+            </h4>
+            <span class="save-status-text" id="journal-save-status">Salvo automaticamente</span>
+          </div>
+          <p class="journal-prompt">O que Deus ministrou ao seu coração através desta leitura hoje? Registre seus insights:</p>
+          <textarea id="today-notes-input" class="journal-textarea" placeholder="Escreva aqui suas reflexões pessoais, orações e aplicações para sua vida..."></textarea>
+          
+          <div class="journal-footer-row">
+            <div class="input-inline-group">
+              <label for="today-fav-verse-input">Versículo que mais me tocou:</label>
+              <input type="text" id="today-fav-verse-input" placeholder="Ex: Gênesis 1:3">
+            </div>
+            <button class="btn btn-secondary" id="save-notes-btn">
+              <span>💾</span> Salvar Anotações
+            </button>
+          </div>
+        </div>
+
+        <!-- BARRA DE AÇÃO PRINCIPAL -->
+        <div class="hero-actions-bar">
+          <button class="btn btn-primary btn-lg" id="toggle-complete-btn">
+            <span class="btn-icon" id="complete-btn-icon">✅</span>
+            <span id="complete-btn-text">Marcar como Concluído Hoje</span>
+          </button>
+
+          <button class="btn btn-whatsapp btn-lg" id="whatsapp-quick-send-btn">
+            <span class="btn-icon">💬</span>
+            <span>Compartilhar Estudo no WhatsApp</span>
+          </button>
+
+          <div class="day-navigation-controls">
+            <button class="btn-nav-day" id="prev-day-btn" title="Dia anterior">◀ Dia Anterior</button>
+            <span class="current-day-label" id="nav-day-indicator">Dia 1</span>
+            <button class="btn-nav-day" id="next-day-btn" title="Próximo dia">Próximo Dia ▶</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SEÇÃO 2: PLANO COMPLETO 365 DIAS ================= -->
+    <section id="tab-plan" class="tab-pane" role="tabpanel">
+      <div class="section-header-banner">
+        <div>
+          <h2 class="page-title">Plano de Leitura de Toda a Bíblia</h2>
+          <p class="page-description">365 dias organizados de Gênesis ao Apocalipse com temas e versículos-chave.</p>
+        </div>
+        <div class="plan-quick-stats">
+          <div class="stat-pill"><strong id="plan-completed-counter">0</strong> de 365 Concluídos</div>
+        </div>
+      </div>
+
+      <!-- FILTROS E BUSCA -->
+      <div class="plan-filters-card">
+        <div class="search-input-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="plan-search-input" placeholder="Buscar por livro, tema, versículo ou palavra-chave (ex: Abraão, Salmos, Graça, Oração)...">
+          <button id="clear-search-btn" class="clear-btn" title="Limpar busca">✕</button>
+        </div>
+
+        <div class="filter-buttons-group">
+          <button class="filter-chip active" data-filter="all">Todos (365)</button>
+          <button class="filter-chip" data-filter="pending">⏳ Pendentes</button>
+          <button class="filter-chip" data-filter="completed">✅ Concluídos</button>
+          <button class="filter-chip" data-filter="ot">📜 Antigo Testamento</button>
+          <button class="filter-chip" data-filter="nt">🕊️ Novo Testamento</button>
+          <button class="filter-chip" data-filter="notes">✍️ Com Anotações</button>
+        </div>
+      </div>
+
+      <!-- LISTAGEM EM GRID DOS 365 DIAS -->
+      <div class="plan-grid-container" id="plan-days-grid">
+        <!-- Renderizado dinamicamente pelo JavaScript -->
+      </div>
+    </section>
+
+    <!-- ================= SEÇÃO 3: MINHA BIBLIOTECA ================= -->
+    <section id="tab-library" class="tab-pane" role="tabpanel">
+      <div class="section-header-banner">
+        <div>
+          <h2 class="page-title">Minha Biblioteca de Livros</h2>
+          <p class="page-description">Cadastre os livros da sua estante. O sistema conecta os temas dos seus livros aos dias correspondentes de leitura bíblica!</p>
+        </div>
+        <button class="btn btn-primary" id="open-add-book-modal-btn">
+          <span>➕</span> Cadastrar Novo Livro
+        </button>
+      </div>
+
+      <!-- GRID DOS LIVROS CADASTRADOS -->
+      <div class="library-shelf-container" id="library-books-grid">
+        <!-- Cards dos livros gerados via JS -->
+      </div>
+    </section>
+
+    <!-- ================= SEÇÃO 4: MEU PROGRESSO & ESTATÍSTICAS ================= -->
+    <section id="tab-stats" class="tab-pane" role="tabpanel">
+      <div class="section-header-banner">
+        <div>
+          <h2 class="page-title">Meu Progresso & Frequência</h2>
+          <p class="page-description">Acompanhe sua fidelidade na leitura e veja o panorama da sua jornada bíblica.</p>
+        </div>
+      </div>
+
+      <!-- CARDS DE ESTATÍSTICAS PRINCIPAIS -->
+      <div class="stats-overview-grid">
+        <div class="stat-card stat-card-highlight">
+          <div class="stat-card-header">
+            <span class="stat-icon">📈</span>
+            <span class="stat-title">Progresso Total</span>
+          </div>
+          <div class="stat-radial-container">
+            <div class="stat-big-number" id="stats-percentage-text">0.0%</div>
+            <p class="stat-subtext"><span id="stats-completed-days">0</span> de 365 dias estudados</p>
+          </div>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-fill" id="stats-global-bar" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="stat-icon">🔥</span>
+            <span class="stat-title">Sequência Atual (Streak)</span>
+          </div>
+          <div class="stat-big-number" id="stats-streak-text">0</div>
+          <p class="stat-subtext">dias ininterruptos de leitura diária</p>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="stat-icon">✍️</span>
+            <span class="stat-title">Diários & Anotações</span>
+          </div>
+          <div class="stat-big-number" id="stats-notes-count">0</div>
+          <p class="stat-subtext">registros devocionais escritos</p>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="stat-icon">📚</span>
+            <span class="stat-title">Livros Conectados</span>
+          </div>
+          <div class="stat-big-number" id="stats-books-count">0</div>
+          <p class="stat-subtext">obras auxiliando seu aprendizado</p>
+        </div>
+      </div>
+
+      <!-- PROGRESSO POR TESTAMENTO -->
+      <div class="testament-progress-box">
+        <h3 class="box-title">Distribuição por Testamento</h3>
+        
+        <div class="testament-row">
+          <div class="testament-info">
+            <span class="t-name">📜 Antigo Testamento (Dias 1 a 265)</span>
+            <span class="t-val" id="stats-ot-text">0 / 265</span>
+          </div>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-fill fill-gold" id="stats-ot-bar" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <div class="testament-row">
+          <div class="testament-info">
+            <span class="t-name">🕊️ Novo Testamento (Dias 266 a 365)</span>
+            <span class="t-val" id="stats-nt-text">0 / 100</span>
+          </div>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-fill fill-blue" id="stats-nt-bar" style="width: 0%;"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SEÇÃO 5: CONFIGURAÇÕES & WHATSAPP ================= -->
+    <section id="tab-whatsapp" class="tab-pane" role="tabpanel">
+      <div class="section-header-banner">
+        <div>
+          <h2 class="page-title">Integração com WhatsApp</h2>
+          <p class="page-description">Receba o lembrete diário com a leitura bíblica, o tema, versículo e reflexão direto no seu celular.</p>
+        </div>
+      </div>
+
+      <div class="whatsapp-layout-grid">
+        <!-- FORMULÁRIO DE CONFIGURAÇÃO -->
+        <div class="card-glass whatsapp-config-card">
+          <h3 class="card-title">
+            <span class="icon">⚙️</span> Dados de Envio & Lembretes
+          </h3>
+
+          <form id="settings-form" class="standard-form">
+            <div class="form-group">
+              <label for="cfg-user-name">Seu Nome / Como prefere ser chamado:</label>
+              <input type="text" id="cfg-user-name" placeholder="Ex: Samuel" required>
+            </div>
+
+            <div class="form-group">
+              <label for="cfg-phone">Número de WhatsApp (com DDD):</label>
+              <input type="tel" id="cfg-phone" placeholder="Ex: 11987654321 (apenas números)" required>
+              <small class="helper-text">Insira seu DDD e número celular (ex: 11987654321).</small>
+            </div>
+
+            <div class="form-group">
+              <label for="cfg-time">Horário Preferido do Lembrete Diário:</label>
+              <input type="time" id="cfg-time" value="07:00" required>
+            </div>
+
+            <div class="form-group">
+              <label for="cfg-current-day">Dia Atual do Plano:</label>
+              <input type="number" id="cfg-current-day" min="1" max="365" value="1">
+              <small class="helper-text">Você pode ajustar caso queira iniciar em outro dia específico.</small>
+            </div>
+
+            <button type="submit" class="btn btn-primary" id="save-settings-btn">
+              <span>💾</span> Salvar Configurações
+            </button>
+          </form>
+
+          <!-- SEÇÃO DO BOT LOCAL COM QR CODE -->
+          <div class="bot-control-box">
+            <h4 class="box-subtitle">
+              <span class="icon">🤖</span> Bot Local Automatizado (Playwright)
+            </h4>
+            <p class="bot-desc">O bot roda localmente no seu computador e utiliza sua sessão do WhatsApp Web sem nenhum custo de API.</p>
+            
+            <div class="bot-status-indicator" id="bot-status-container">
+              <span class="status-badge-bot" id="bot-status-badge">Verificando sessão...</span>
+            </div>
+
+            <div class="bot-buttons-row">
+              <button class="btn btn-secondary" id="bot-login-btn">
+                <span>📱</span> Conectar com QR Code (Login Único)
+              </button>
+              <button class="btn btn-whatsapp" id="bot-send-now-btn">
+                <span>🚀</span> Disparar Envio Automático Agora
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- PRÉVIA REALISTA DO WHATSAPP -->
+        <div class="card-glass whatsapp-preview-card">
+          <h3 class="card-title">
+            <span class="icon">📱</span> Pré-visualização da Mensagem no WhatsApp
+          </h3>
+          <p class="preview-hint">Esta é a mensagem formatada que será enviada para o seu celular hoje:</p>
+
+          <div class="whatsapp-mockup">
+            <div class="whatsapp-bubble" id="whatsapp-message-preview">
+              Carregando prévia da mensagem...
+            </div>
+          </div>
+
+          <div class="whatsapp-preview-actions">
+            <a href="#" target="_blank" id="direct-wa-link" class="btn btn-whatsapp btn-lg">
+              <span>📲</span> Abrir e Enviar Agora no WhatsApp Web (1-Clique)
+            </a>
+            <button class="btn btn-ghost" id="copy-wa-message-btn">
+              <span>📋</span> Copiar Texto da Mensagem
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ================= MODAL: CADASTRAR / EDITAR LIVRO ================= -->
+  <div id="book-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title" id="book-modal-title">Cadastrar Livro na Minha Estante</h3>
+        <button class="modal-close-btn" id="close-book-modal-btn" aria-label="Fechar modal">✕</button>
+      </div>
+
+      <form id="book-form" class="standard-form modal-body">
+        <input type="hidden" id="book-id-input">
+
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label for="book-title-input">Título do Livro *</label>
+            <input type="text" id="book-title-input" placeholder="Ex: O Deus Presente" required>
+          </div>
+          <div class="form-group flex-1">
+            <label for="book-author-input">Autor *</label>
+            <input type="text" id="book-author-input" placeholder="Ex: D.A. Carson" required>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="book-publisher-input">Editora</label>
+            <input type="text" id="book-publisher-input" placeholder="Ex: Vida Nova">
+          </div>
+          <div class="form-group flex-1">
+            <label for="book-year-input">Ano de Publicação</label>
+            <input type="number" id="book-year-input" placeholder="Ex: 2013">
+          </div>
+          <div class="form-group flex-1">
+            <label for="book-color-input">Cor de Destaque da Capa</label>
+            <input type="color" id="book-color-input" value="#1e3a8a">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="book-themes-input">Temas e Palavras-Chave (separadas por vírgula) *</label>
+          <input type="text" id="book-themes-input" placeholder="Ex: Criação, Aliança, Graça, Oração, Salvação, Evangelhos" required>
+          <small class="helper-text">Essas palavras conectam automaticamente este livro às leituras bíblicas diárias!</small>
+        </div>
+
+        <div class="form-group">
+          <label for="book-summary-input">Resumo da Obra / Sobre o que fala o livro:</label>
+          <textarea id="book-summary-input" rows="3" placeholder="Breve resumo da mensagem do livro para você lembrar..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="book-notes-input">Minhas Notas Pessoais de Leitura:</label>
+          <textarea id="book-notes-input" rows="2" placeholder="Capítulos preferidos, citações ou ideias principais..."></textarea>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" id="cancel-book-modal-btn">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="save-book-btn">Salvar Livro</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= MODAL: DETALHES DE UM DIA ESPECÍFICO ================= -->
+  <div id="day-detail-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal-content modal-content-lg">
+      <div class="modal-header">
+        <div class="modal-day-badge" id="modal-day-number">Dia 1 de 365</div>
+        <button class="modal-close-btn" id="close-day-modal-btn" aria-label="Fechar modal">✕</button>
+      </div>
+
+      <div class="modal-body" id="modal-day-body">
+        <!-- Preenchido dinamicamente via JS -->
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

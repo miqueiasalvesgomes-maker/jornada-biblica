@@ -1,0 +1,2 @@
+# Projeto Jornada Bíblica 365
+# O servidor funciona com a biblioteca padrão do Python para deploy ultra-rápido.
