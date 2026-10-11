@@ -174,9 +174,47 @@ class BibleStudyHandler(http.server.SimpleHTTPRequestHandler):
 
         if path.startswith("/api/"):
             self.handle_api_get(path, urllib.parse.parse_qs(parsed.query))
+            return
+
+        # Servir arquivos estáticos (index.html, style.css, app.js, manifest.json, sw.js)
+        filename = path.lstrip("/")
+        if not filename or filename == "index.html":
+            filename = "index.html"
+            content_type = "text/html; charset=utf-8"
+        elif filename == "style.css":
+            content_type = "text/css; charset=utf-8"
+        elif filename == "app.js":
+            content_type = "application/javascript; charset=utf-8"
+        elif filename == "manifest.json":
+            content_type = "application/json; charset=utf-8"
+        elif filename == "sw.js":
+            content_type = "application/javascript; charset=utf-8"
         else:
-            # Servir arquivos estáticos (index.html, style.css, app.js)
-            super().do_GET()
+            content_type = "application/octet-stream"
+
+        possible_paths = [
+            os.path.join(STATIC_DIR, filename),
+            os.path.join(BASE_DIR, filename),
+            os.path.join(BASE_DIR, "static", filename)
+        ]
+
+        found_path = None
+        for p in possible_paths:
+            if os.path.exists(p) and os.path.isfile(p):
+                found_path = p
+                break
+
+        if found_path:
+            with open(found_path, "rb") as f:
+                content = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(content)))
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(content)
+        else:
+            self.send_error(404, f"Arquivo '{filename}' não encontrado no servidor.")
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
