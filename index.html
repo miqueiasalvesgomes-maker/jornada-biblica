@@ -136,6 +136,54 @@
           </div>
         </div>
 
+        <!-- LIVRO DE TRAVESSEIRO & CABECEIRA OFICIAL -->
+        <div class="bedside-card-feature" id="today-bedside-container">
+          <div class="bedside-header-line">
+            <div class="bedside-pill-badge">
+              <span class="bedside-star">⭐</span>
+              <span>LIVRO DE TRAVESSEIRO & CABECEIRA</span>
+            </div>
+            <span class="bedside-focus-tag" id="bedside-focus-tag">Foco Pastoral Diário</span>
+          </div>
+
+          <div class="bedside-card-body">
+            <div class="bedside-cover-box">
+              <img id="bedside-cover-image" src="/img/o_pastor_pentecostal.jpg" alt="Capa O Pastor Pentecostal" class="bedside-cover-img" onerror="this.src='img/o_pastor_pentecostal.jpg'">
+              <div class="bedside-cpad-badge">CPAD</div>
+            </div>
+
+            <div class="bedside-details-box">
+              <h4 class="bedside-title" id="bedside-title-text">O Pastor Pentecostal: Teologia e Práticas Pastorais</h4>
+              <p class="bedside-author" id="bedside-author-text">Thomas E. Trask, Wayde I. Goodall & Zenas J. Bicket (Orgs.)</p>
+              
+              <div class="bedside-pastoral-callout">
+                <div class="callout-label" id="bedside-callout-topic">⚡ A Prática Ministerial no Poder do Espírito Santo</div>
+                <blockquote class="callout-quote" id="bedside-callout-quote">
+                  "O ministério cristão só alcança autoridade duradoura quando exercido sob o revestimento de poder e os dons do Espírito Santo."
+                </blockquote>
+                <span class="callout-ref" id="bedside-callout-ref">Capítulo 2: A Teologia Pentecostal e a Unção Ministerial</span>
+              </div>
+
+              <div class="bedside-tags-row" id="bedside-tags-row">
+                <span class="tag-badge">#Liderança</span>
+                <span class="tag-badge">#Espírito Santo</span>
+                <span class="tag-badge">#Oração</span>
+                <span class="tag-badge">#Avivamento</span>
+                <span class="tag-badge">#Cuidado do Rebanho</span>
+              </div>
+
+              <div class="bedside-actions-row">
+                <button class="btn btn-sm btn-secondary" id="btn-view-bedside-library">
+                  <span>📚</span> Ver na Biblioteca
+                </button>
+                <button class="btn btn-sm btn-ghost" id="btn-share-pastoral-wa">
+                  <span>💬</span> Compartilhar Citação Pastoral
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- LIVROS CONECTADOS DA BIBLIOTECA -->
         <div class="connected-books-box">
           <div class="connected-books-header">
@@ -548,6 +596,19 @@
         <div class="form-group">
           <label for="book-notes-input">Minhas Notas Pessoais de Leitura:</label>
           <textarea id="book-notes-input" rows="2" placeholder="Capítulos preferidos, citações ou ideias principais..."></textarea>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label for="book-cover-image-input">Caminho da Imagem da Capa (opcional)</label>
+            <input type="text" id="book-cover-image-input" placeholder="Ex: img/o_pastor_pentecostal.jpg">
+          </div>
+          <div class="form-group flex-1" style="display: flex; align-items: center; margin-top: 1.5rem;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: var(--gold-light); font-weight: 600;">
+              <input type="checkbox" id="book-is-bedside-input" style="width: 1.2rem; height: 1.2rem;">
+              <span>⭐ Livro de Travesseiro</span>
+            </label>
+          </div>
         </div>
 
         <div class="modal-footer">

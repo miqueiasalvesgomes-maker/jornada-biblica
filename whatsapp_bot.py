@@ -29,7 +29,7 @@ except ImportError:
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SESSION_DIR = os.path.join(BASE_DIR, "data", "whatsapp_session")
 
-def format_whatsapp_message(day_data, books_data=None, user_name="Irmão(ã)"):
+def format_whatsapp_message(day_data, books_data=None, user_name="Irmão(ã)", bedside_book=None, pastoral_focus=None):
     """
     Formata uma mensagem rica com formatação do WhatsApp (*negrito*, _itálico_, emojis).
     """
@@ -59,6 +59,17 @@ def format_whatsapp_message(day_data, books_data=None, user_name="Irmão(ã)"):
         f"💡 *Reflexão para o seu Dia:*",
         f"{reflection}",
     ]
+
+    # Livro de Cabeceira / Travesseiro
+    if bedside_book:
+        p_topic = (pastoral_focus or {}).get("topic", "Ministério e Prática Pastoral")
+        p_quote = (pastoral_focus or {}).get("quote", "Crescimento contínuo no poder e sabedoria do Espírito Santo.")
+        msg_lines.extend([
+            "",
+            "🛌 *Livro de Travesseiro:* _O Pastor Pentecostal_ (CPAD)",
+            f"⚡ *Foco Pastoral:* _{p_topic}_",
+            f"_{p_quote}_"
+        ])
 
     # Recomendações da biblioteca
     if books_data and len(books_data) > 0:

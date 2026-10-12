@@ -1333,6 +1333,23 @@ def init_database_and_json():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
+    # Tabela de Usuários (Multi-Usuário)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        phone TEXT,
+        email TEXT,
+        avatar_icon TEXT DEFAULT '🕊️',
+        current_day INTEGER DEFAULT 1,
+        reminder_time TEXT DEFAULT '07:00',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    cursor.execute("SELECT COUNT(*) FROM users")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("INSERT INTO users (id, name, avatar_icon, current_day) VALUES (1, 'Miqueias', '🕊️', 1)")
+
     # Tabela de Livros da Biblioteca do Usuário
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS books (
@@ -1344,6 +1361,8 @@ def init_database_and_json():
         themes TEXT, -- JSON ou tags separadas por vírgula
         summary TEXT,
         cover_color TEXT DEFAULT '#4a5568',
+        cover_image TEXT,
+        is_bedside INTEGER DEFAULT 0,
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
@@ -1353,7 +1372,8 @@ def init_database_and_json():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS study_journal (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        day_number INTEGER UNIQUE NOT NULL,
+        user_id INTEGER DEFAULT 1,
+        day_number INTEGER NOT NULL,
         status TEXT DEFAULT 'pending', -- pending, completed, skipped
         completed_at TIMESTAMP,
         personal_notes TEXT,
@@ -1374,7 +1394,7 @@ def init_database_and_json():
 
     # Inserir configurações padrão caso não existam
     default_settings = [
-        ("user_name", "Estudante da Palavra"),
+        ("user_name", "Miqueias"),
         ("whatsapp_number", ""),
         ("reminder_time", "07:00"),
         ("auto_whatsapp_enabled", "false"),
@@ -1386,37 +1406,44 @@ def init_database_and_json():
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
 
     # Inserir livros iniciais de exemplo na biblioteca (obras clássicas consagradas de apoio bíblico)
-    # que o usuário pode manter, editar ou substituir pelos livros da sua estante!
+    # com destaque absoluto para o livro de cabeceira/travesseiro "O Pastor Pentecostal"
     cursor.execute("SELECT COUNT(*) FROM books")
     if cursor.fetchone()[0] == 0:
         sample_books = [
+            ("O Pastor Pentecostal: Teologia e Práticas Pastorais",
+             "Thomas E. Trask, Wayde I. Goodall & Zenas J. Bicket (Orgs.)",
+             "CPAD", 2005,
+             "Liderança, Pastor, Ministério, Espírito Santo, Oração, Avivamento, Família, Pregação, Aconselhamento, Dons Espirituais, Missões, Integridade, Unção, Batalha Espiritual, Vocação, Cuidado do Rebanho, Discipulado",
+             "Manual clássico e devocional de cabeceira da CPAD. Obra fundamental de teologia e prática pastoral que reúne orientações práticas e espirituais para líderes, pastores e estudantes da Bíblia sobre o poder do Espírito Santo, integridade ministerial, oração e pastoreio.",
+             "#1e3a5f", "img/o_pastor_pentecostal.jpg", 1,
+             "⭐ LIVRO DE TRAVESSEIRO & CABECEIRA OFICIAL: Acompanhamento diário das orientações teológicas e pastorais pentecostais em conexão com a leitura bíblica."),
             ("O Deus Presente: Encontrando seu Lugar na História de Deus", "D.A. Carson", "Vida Nova", 2013,
              "Criação, Aliança, Graça, Teologia Bíblica, Queda, Redenção",
              "Visão panorâmica da Bíblia inteira de Gênesis ao Apocalipse, conectando todas as histórias à narrativa maior de Cristo.",
-             "#1e3a8a", "Excelente para acompanhar os primeiros dias em Gênesis e os Evangelhos."),
+             "#1e3a8a", None, 0, "Excelente para acompanhar os primeiros dias em Gênesis e os Evangelhos."),
             ("A Cruz de Cristo", "John Stott", "Editora Vida", 2006,
              "A Cruz de Cristo, Expiação, Salvação, Graça, Redenção pelo Sangue, O Servo Sofredor",
              "Obra monumental sobre o significado teológico, moral e pessoal do sacrifício vicário de Jesus na cruz.",
-             "#831843", "Leitura ideal para acompanhar Isaías 53, os Evangelhos e Romanos."),
+             "#831843", None, 0, "Leitura ideal para acompanhar Isaías 53, os Evangelhos e Romanos."),
             ("Oração: Experimentando Intimidade e Poder com Deus", "Timothy Keller", "Vida Nova", 2015,
              "Oração, Intimidade com Deus, Salmos, Adoração, Meditação Bíblica, Quebrantamento",
              "Guia prático e teológico sobre oração de adoração, intercessão e comunhão com Deus fundamentada nos Salmos.",
-             "#065f46", "Fundamental para acompanhar a leitura dos Salmos e as orações de Paulo."),
+             "#065f46", None, 0, "Fundamental para acompanhar a leitura dos Salmos e as orações de Paulo."),
             ("Teologia Sistemática", "Wayne Grudem", "Vida Nova", 2005,
              "Doutrina de Deus, Criação, Trindade, Santidade, Cristologia, Espírito Santo, Escatologia",
              "Manual clássico de referência para consultar e aprofundar temas doutrinários e teológicos ao longo do estudo.",
-             "#78350f", "Livro de consulta contínua para temas difíceis em qualquer livro da Bíblia."),
+             "#78350f", None, 0, "Livro de consulta contínua para temas difíceis em qualquer livro da Bíblia."),
             ("Comentário Bíblico do Antigo e Novo Testamento", "F.F. Bruce & Matthew Henry", "Vida", 2010,
              "Exegese, História Bíblica, Comentário Versículo por Versículo, Profecias, Epístolas",
              "Comentários devocionais e históricos detalhados sobre passagens e costumes da antiguidade bíblica.",
-             "#312e81", "Ótimo para tirar dúvidas sobre o contexto cultural de cada dia.")
+             "#312e81", None, 0, "Ótimo para tirar dúvidas sobre o contexto cultural de cada dia.")
         ]
         for b in sample_books:
             cursor.execute("""
-            INSERT INTO books (title, author, publisher, year, themes, summary, cover_color, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO books (title, author, publisher, year, themes, summary, cover_color, cover_image, is_bedside, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, b)
-        print("[OK] Livros modelo inseridos na biblioteca pessoal!")
+        print("[OK] Livros modelo inseridos com sucesso na biblioteca pessoal!")
 
     conn.commit()
     conn.close()

@@ -516,6 +516,56 @@ function renderTodaySection(data) {
   if (notesInput) notesInput.value = progress.personal_notes || '';
   if (favVerseInput) favVerseInput.value = progress.favorite_verse || '';
 
+  // LIVRO DE TRAVESSEIRO & CABECEIRA OFICIAL
+  const bedsideBox = document.getElementById('today-bedside-container');
+  const bedsideBook = data.bedside_book;
+  const pastoralFocus = data.pastoral_focus;
+
+  if (bedsideBox) {
+    if (bedsideBook) {
+      bedsideBox.style.display = 'block';
+      const titleEl = document.getElementById('bedside-title-text');
+      const authorEl = document.getElementById('bedside-author-text');
+      const coverEl = document.getElementById('bedside-cover-image');
+      const calloutTopic = document.getElementById('bedside-callout-topic');
+      const calloutQuote = document.getElementById('bedside-callout-quote');
+      const calloutRef = document.getElementById('bedside-callout-ref');
+      const tagsRow = document.getElementById('bedside-tags-row');
+
+      if (titleEl) titleEl.textContent = bedsideBook.title;
+      if (authorEl) authorEl.textContent = `${bedsideBook.author} • ${bedsideBook.publisher || 'CPAD'}`;
+      if (coverEl && bedsideBook.cover_image) {
+        coverEl.src = bedsideBook.cover_image;
+      }
+      if (pastoralFocus) {
+        if (calloutTopic) calloutTopic.textContent = `⚡ ${pastoralFocus.topic}`;
+        if (calloutQuote) calloutQuote.textContent = `“${pastoralFocus.quote}”`;
+        if (calloutRef) calloutRef.textContent = pastoralFocus.chapter_ref;
+      }
+      if (tagsRow) {
+        const bThemes = (bedsideBook.themes || '').split(',').map(t => t.trim()).filter(Boolean);
+        tagsRow.innerHTML = bThemes.slice(0, 6).map(t => `<span class="tag-badge">#${escapeHtml(t)}</span>`).join('');
+      }
+
+      const viewBtn = document.getElementById('btn-view-bedside-library');
+      if (viewBtn) {
+        viewBtn.onclick = () => {
+          switchTab('tab-library');
+        };
+      }
+
+      const shareBtn = document.getElementById('btn-share-pastoral-wa');
+      if (shareBtn) {
+        shareBtn.onclick = () => {
+          const text = `📖 *Jornada Bíblica 365*\n🛌 *Livro de Travesseiro:* _${bedsideBook.title}_ (CPAD)\n⚡ *Foco Pastoral Diário:* ${pastoralFocus?.topic || 'Ministério'}\n"${pastoralFocus?.quote || ''}"\n— ${pastoralFocus?.chapter_ref || ''}`;
+          window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+        };
+      }
+    } else {
+      bedsideBox.style.display = 'none';
+    }
+  }
+
   // Livros recomendados
   const booksGrid = document.getElementById('today-books-grid');
   if (booksGrid) {
@@ -633,11 +683,16 @@ function renderLibrary() {
 
   grid.innerHTML = state.books.map(b => {
     const themesList = (b.themes || '').split(',').map(t => t.trim()).filter(Boolean);
+    const isBedside = b.is_bedside === 1;
     return `
-      <div class="library-book-card" data-book-id="${b.id}">
-        <div class="book-card-spine-preview" style="background: ${b.cover_color || '#1e3a8a'};"></div>
+      <div class="library-book-card ${isBedside ? 'is-bedside-card' : ''}" data-book-id="${b.id}">
+        ${b.cover_image ? `
+          <img src="${b.cover_image}" alt="${escapeHtml(b.title)}" class="book-card-cover-thumb" onerror="this.style.display='none'">
+        ` : `
+          <div class="book-card-spine-preview" style="background: ${b.cover_color || '#1e3a8a'};"></div>
+        `}
         <div class="book-card-title">${escapeHtml(b.title)}</div>
-        <div class="book-card-meta">${escapeHtml(b.author)} ${b.year ? `• ${b.year}` : ''}</div>
+        <div class="book-card-meta">${escapeHtml(b.author)} ${b.year ? `• ${b.year}` : ''} ${b.publisher ? `(${escapeHtml(b.publisher)})` : ''}</div>
         
         <div class="book-card-themes">
           ${themesList.map(t => `<span class="tag-badge">${escapeHtml(t)}</span>`).join('')}
@@ -646,12 +701,32 @@ function renderLibrary() {
         <p class="book-card-summary">${escapeHtml(b.summary || '')}</p>
 
         <div class="book-card-actions">
+          ${!isBedside ? `
+            <button class="btn-sm btn-secondary set-bedside-btn" data-id="${b.id}" title="Definir como Livro de Cabeceira">⭐ Livro de Travesseiro</button>
+          ` : `
+            <span style="font-size: 0.8rem; color: var(--gold-light); font-weight: 700; display: inline-flex; align-items: center; gap: 0.3rem;">⭐ Cabeceira Oficial</span>
+          `}
           <button class="btn-sm btn-ghost edit-book-btn" data-id="${b.id}">✏️ Editar</button>
           <button class="btn-sm btn-ghost delete-book-btn" data-id="${b.id}" style="color: var(--ruby-danger);">🗑️ Excluir</button>
         </div>
       </div>
     `;
   }).join('');
+
+  grid.querySelectorAll('.set-bedside-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = parseInt(btn.getAttribute('data-id'), 10);
+      try {
+        await apiPost(`/books/${id}/bedside`, {});
+        showToast('Livro definido como Livro de Cabeceira Oficial!');
+        await fetchBooks();
+        await fetchTodayData();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
 
   grid.querySelectorAll('.edit-book-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -784,6 +859,8 @@ function openAddBookModal() {
   document.getElementById('book-modal-title').textContent = 'Cadastrar Livro na Minha Estante';
   document.getElementById('book-form').reset();
   document.getElementById('book-id-input').value = '';
+  if (document.getElementById('book-cover-image-input')) document.getElementById('book-cover-image-input').value = '';
+  if (document.getElementById('book-is-bedside-input')) document.getElementById('book-is-bedside-input').checked = false;
   document.getElementById('book-modal').classList.add('open');
 }
 
@@ -801,6 +878,12 @@ function openEditBookModal(bookId) {
   document.getElementById('book-themes-input').value = book.themes || '';
   document.getElementById('book-summary-input').value = book.summary || '';
   document.getElementById('book-notes-input').value = book.notes || '';
+  if (document.getElementById('book-cover-image-input')) {
+    document.getElementById('book-cover-image-input').value = book.cover_image || '';
+  }
+  if (document.getElementById('book-is-bedside-input')) {
+    document.getElementById('book-is-bedside-input').checked = (book.is_bedside === 1);
+  }
 
   document.getElementById('book-modal').classList.add('open');
 }
@@ -1011,6 +1094,8 @@ function setupEventListeners() {
         publisher: document.getElementById('book-publisher-input').value,
         year: document.getElementById('book-year-input').value ? parseInt(document.getElementById('book-year-input').value, 10) : null,
         cover_color: document.getElementById('book-color-input').value,
+        cover_image: document.getElementById('book-cover-image-input') ? document.getElementById('book-cover-image-input').value.trim() : null,
+        is_bedside: document.getElementById('book-is-bedside-input') && document.getElementById('book-is-bedside-input').checked ? 1 : 0,
         themes: document.getElementById('book-themes-input').value,
         summary: document.getElementById('book-summary-input').value,
         notes: document.getElementById('book-notes-input').value

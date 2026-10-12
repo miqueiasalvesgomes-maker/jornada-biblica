@@ -13,6 +13,7 @@ import urllib.parse
 import threading
 import sys
 import traceback
+import mimetypes
 from datetime import datetime, date
 
 if hasattr(sys.stdout, 'reconfigure'):
@@ -36,6 +37,47 @@ if not os.path.exists(JSON_PLAN_PATH) or not os.path.exists(DB_PATH):
 with open(JSON_PLAN_PATH, "r", encoding="utf-8") as f:
     BIBLE_PLAN = json.load(f)
 
+def get_pastoral_focus_for_day(day_data):
+    """Gera uma conexão pastoral devocional diária com o livro de cabeceira 'O Pastor Pentecostal' (CPAD)."""
+    tags = [t.lower() for t in day_data.get("tags", [])]
+
+    if any(k in tags for k in ["oração", "intercessão", "salmos", "intimidade"]):
+        return {
+            "topic": "A Vida Devocional e Oração do Líder",
+            "quote": "O pastor e obreiro pentecostal deve ser, acima de tudo, uma pessoa de oração fervorosa e joelhos dobrados.",
+            "chapter_ref": "Capítulo 4: O Pastor e a Vida de Oração Fervorosa"
+        }
+    elif any(k in tags for k in ["espírito santo", "unção", "dons", "pentecostes"]):
+        return {
+            "topic": "O Batismo e a Unção no Espírito Santo",
+            "quote": "O ministério cristão só alcança autoridade duradoura quando exercido sob o revestimento de poder e os dons do Espírito Santo.",
+            "chapter_ref": "Capítulo 2: A Teologia Pentecostal e a Unção Ministerial"
+        }
+    elif any(k in tags for k in ["liderança", "chamado", "vocação", "propósito"]):
+        return {
+            "topic": "O Chamado Divino e a Vocação Ministerial",
+            "quote": "A vocação pastoral não é uma profissão secular, mas uma santa convocação divina para apascentar o povo com amor e zelo.",
+            "chapter_ref": "Capítulo 1: O Chamado Divino e a Preparação do Ministro"
+        }
+    elif any(k in tags for k in ["integridade", "santidade", "lei moral"]):
+        return {
+            "topic": "Integridade Ética e Santidade no Ministério",
+            "quote": "A integridade moral e espiritual na vida pessoal e familiar é o verdadeiro alicerce da autoridade espiritual.",
+            "chapter_ref": "Capítulo 7: A Integridade do Obreiro e a Vida Familiar"
+        }
+    elif any(k in tags for k in ["cuidado", "rebanho", "aconselhamento", "família", "graça"]):
+        return {
+            "topic": "O Cuidado Compassivo do Rebanho",
+            "quote": "Apascentar as ovelhas de Cristo exige um coração manso, acolhimento amoroso e paciência pastoral.",
+            "chapter_ref": "Capítulo 9: O Aconselhamento Bíblico e o Cuidado das Ovelhas"
+        }
+    else:
+        return {
+            "topic": "A Prática Ministerial Fundamentada na Palavra",
+            "quote": "Toda liderança e ensino devem fluir da autoridade inerrante das Sagradas Escrituras vivificadas pelo Espírito Santo.",
+            "chapter_ref": "Capítulo 3: A Centralidade da Palavra de Deus no Ministério"
+        }
+
 # Fallbacks resilientes para WhatsApp caso Playwright não esteja instalado
 try:
     from whatsapp_bot import WhatsAppBot, format_whatsapp_message, get_direct_whatsapp_url
@@ -48,7 +90,7 @@ except Exception:
         def send_message(self, *a, **kw): return {"success": False, "message": "Use o link direto pelo celular."}
     whatsapp_bot = DummyBot()
 
-    def format_whatsapp_message(day_data, books_data=None, user_name="Irmão(ã)"):
+    def format_whatsapp_message(day_data, books_data=None, user_name="Irmão(ã)", bedside_book=None, pastoral_focus=None):
         day = day_data.get("day", 1)
         reading = day_data.get("reading", "")
         testament = day_data.get("testament", "")
@@ -73,6 +115,15 @@ except Exception:
             f"💡 *Reflexão para o seu Dia:*",
             f"{reflection}",
         ]
+        if bedside_book:
+            p_topic = (pastoral_focus or {}).get("topic", "Ministério e Prática Pastoral")
+            p_quote = (pastoral_focus or {}).get("quote", "Crescimento contínuo no poder e sabedoria do Espírito Santo.")
+            msg_lines.extend([
+                "",
+                "🛌 *Livro de Travesseiro:* _O Pastor Pentecostal_ (CPAD)",
+                f"⚡ *Foco Pastoral:* _{p_topic}_",
+                f"_{p_quote}_"
+            ])
         if books_data and len(books_data) > 0:
             msg_lines.append("")
             msg_lines.append("📚 *Leitura Recomendada da sua Biblioteca:*")
@@ -104,7 +155,7 @@ def get_db_connection():
 
 
 def init_multiuser_db():
-    """Migração automática para garantir suporte a múltiplos usuários no banco."""
+    """Migração automática para garantir suporte a múltiplos usuários e livro de cabeceira."""
     conn = get_db_connection()
     c = conn.cursor()
 
@@ -138,6 +189,47 @@ def init_multiuser_db():
             c.execute("ALTER TABLE study_journal ADD COLUMN user_id INTEGER DEFAULT 1")
         except Exception:
             pass
+
+    # 3. Adiciona colunas cover_image e is_bedside em books se não existirem
+    c.execute("PRAGMA table_info(books)")
+    book_columns = [row["name"] for row in c.fetchall()]
+    if "cover_image" not in book_columns:
+        try:
+            c.execute("ALTER TABLE books ADD COLUMN cover_image TEXT")
+        except Exception:
+            pass
+    if "is_bedside" not in book_columns:
+        try:
+            c.execute("ALTER TABLE books ADD COLUMN is_bedside INTEGER DEFAULT 0")
+        except Exception:
+            pass
+
+    # 4. Garante que "O Pastor Pentecostal" está cadastrado e ativo como Livro de Cabeceira Oficial
+    c.execute("SELECT id FROM books WHERE title LIKE '%Pastor Pentecostal%'")
+    pastor_book = c.fetchone()
+    if not pastor_book:
+        c.execute("""
+        INSERT INTO books (title, author, publisher, year, themes, summary, cover_color, cover_image, is_bedside, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            "O Pastor Pentecostal: Teologia e Práticas Pastorais",
+            "Thomas E. Trask, Wayde I. Goodall & Zenas J. Bicket (Orgs.)",
+            "CPAD", 2005,
+            "Liderança, Pastor, Ministério, Espírito Santo, Oração, Avivamento, Família, Pregação, Aconselhamento, Dons Espirituais, Missões, Integridade, Unção, Batalha Espiritual, Vocação, Cuidado do Rebanho, Discipulado",
+            "Manual clássico e devocional de cabeceira da CPAD. Obra fundamental de teologia e prática pastoral que reúne orientações práticas e espirituais para líderes, pastores e estudantes da Bíblia sobre o poder do Espírito Santo, integridade ministerial, oração e pastoreio.",
+            "#1e3a5f", "img/o_pastor_pentecostal.jpg", 1,
+            "⭐ LIVRO DE TRAVESSEIRO & CABECEIRA OFICIAL: Acompanhamento diário das orientações teológicas e pastorais pentecostais em conexão com a leitura bíblica."
+        ))
+    else:
+        c.execute("""
+        UPDATE books SET 
+            is_bedside = 1,
+            cover_image = 'img/o_pastor_pentecostal.jpg',
+            publisher = 'CPAD',
+            author = 'Thomas E. Trask, Wayde I. Goodall & Zenas J. Bicket (Orgs.)',
+            themes = 'Liderança, Pastor, Ministério, Espírito Santo, Oração, Avivamento, Família, Pregação, Aconselhamento, Dons Espirituais, Missões, Integridade, Unção, Batalha Espiritual, Vocação, Cuidado do Rebanho, Discipulado'
+        WHERE id = ?
+        """, (pastor_book["id"],))
 
     conn.commit()
     conn.close()
@@ -213,25 +305,35 @@ class BibleStudyHandler(http.server.SimpleHTTPRequestHandler):
 
             # Busca pelo arquivo estático em múltiplos locais possíveis (static/ ou raiz)
             filename = path.lstrip("/")
+            guessed_type, _ = mimetypes.guess_type(filename)
+
             if not filename or filename == "index.html":
                 filename = "index.html"
                 content_type = "text/html; charset=utf-8"
-            elif filename == "style.css":
+            elif filename.endswith(".css"):
                 content_type = "text/css; charset=utf-8"
-            elif filename == "app.js":
+            elif filename.endswith(".js"):
                 content_type = "application/javascript; charset=utf-8"
-            elif filename == "manifest.json":
+            elif filename.endswith(".json"):
                 content_type = "application/json; charset=utf-8"
-            elif filename == "sw.js":
-                content_type = "application/javascript; charset=utf-8"
+            elif guessed_type:
+                content_type = guessed_type
             else:
                 content_type = "application/octet-stream"
 
             possible_paths = [
                 os.path.join(STATIC_DIR, filename),
+                os.path.join(STATIC_DIR, filename.replace("static/", "")),
                 os.path.join(BASE_DIR, filename),
                 os.path.join(BASE_DIR, "static", filename)
             ]
+
+            # Suporte especial para o livro de cabeceira "O Pastor Pentecostal"
+            if "o_pastor_pentecostal" in filename or "pastor pentecostal" in filename:
+                possible_paths.extend([
+                    os.path.join(STATIC_DIR, "img", "o_pastor_pentecostal.jpg"),
+                    os.path.join(BASE_DIR, "o pastor pentecostal.jpeg")
+                ])
 
             found_path = None
             for p in possible_paths:
@@ -342,12 +444,23 @@ class BibleStudyHandler(http.server.SimpleHTTPRequestHandler):
             row = c.fetchone()
             progress = dict(row) if row else {"status": "pending", "personal_notes": "", "favorite_verse": ""}
             matched_books = get_matching_books(day_data.get("tags", []))
+
+            # Livro de Cabeceira Oficial & Conexão Pastoral Diária
+            c.execute("SELECT * FROM books WHERE is_bedside = 1 LIMIT 1")
+            bedside_row = c.fetchone()
+            if not bedside_row:
+                c.execute("SELECT * FROM books WHERE title LIKE '%Pastor Pentecostal%' LIMIT 1")
+                bedside_row = c.fetchone()
+            bedside_book = dict(bedside_row) if bedside_row else None
+            pastoral_focus = get_pastoral_focus_for_day(day_data)
             conn.close()
 
             self.send_json({
                 "day_data": day_data,
                 "progress": progress,
                 "recommended_books": matched_books,
+                "bedside_book": bedside_book,
+                "pastoral_focus": pastoral_focus,
                 "user": user_data
             })
             return
@@ -366,12 +479,22 @@ class BibleStudyHandler(http.server.SimpleHTTPRequestHandler):
                 row = c.fetchone()
                 progress = dict(row) if row else {"status": "pending", "personal_notes": "", "favorite_verse": ""}
                 matched_books = get_matching_books(day_data.get("tags", []))
+
+                c.execute("SELECT * FROM books WHERE is_bedside = 1 LIMIT 1")
+                bedside_row = c.fetchone()
+                if not bedside_row:
+                    c.execute("SELECT * FROM books WHERE title LIKE '%Pastor Pentecostal%' LIMIT 1")
+                    bedside_row = c.fetchone()
+                bedside_book = dict(bedside_row) if bedside_row else None
+                pastoral_focus = get_pastoral_focus_for_day(day_data)
                 conn.close()
 
                 self.send_json({
                     "day_data": day_data,
                     "progress": progress,
-                    "recommended_books": matched_books
+                    "recommended_books": matched_books,
+                    "bedside_book": bedside_book,
+                    "pastoral_focus": pastoral_focus
                 })
                 return
             except ValueError:
@@ -379,9 +502,9 @@ class BibleStudyHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json({"error": "ID do dia inválido"}, 400)
                 return
 
-        # 5. /api/books -> Lista de livros da biblioteca
+        # 5. /api/books -> Lista de livros da biblioteca (Livro de Cabeceira em destaque no topo)
         if path == "/api/books":
-            c.execute("SELECT * FROM books ORDER BY id DESC")
+            c.execute("SELECT * FROM books ORDER BY is_bedside DESC, id ASC")
             books = [dict(row) for row in c.fetchall()]
             conn.close()
             self.send_json(books)
@@ -446,8 +569,17 @@ class BibleStudyHandler(http.server.SimpleHTTPRequestHandler):
             day_data = next((d for d in BIBLE_PLAN if d["day"] == current_day), BIBLE_PLAN[0])
             matched_books = get_matching_books(day_data.get("tags", []))
 
+            # Livro de cabeceira para mensagem
+            c.execute("SELECT * FROM books WHERE is_bedside = 1 LIMIT 1")
+            bedside_row = c.fetchone()
+            if not bedside_row:
+                c.execute("SELECT * FROM books WHERE title LIKE '%Pastor Pentecostal%' LIMIT 1")
+                bedside_row = c.fetchone()
+            bedside_book = dict(bedside_row) if bedside_row else None
+            pastoral_focus = get_pastoral_focus_for_day(day_data)
+
             user_name = user_data.get("name", "Amado(a)")
-            msg = format_whatsapp_message(day_data, matched_books, user_name)
+            msg = format_whatsapp_message(day_data, matched_books, user_name, bedside_book, pastoral_focus)
             phone = user_data.get("phone", "")
             direct_url = get_direct_whatsapp_url(phone, msg)
             group_url = f"https://api.whatsapp.com/send?text={urllib.parse.quote(msg)}"
@@ -458,7 +590,8 @@ class BibleStudyHandler(http.server.SimpleHTTPRequestHandler):
             for m in c.fetchall():
                 m_dict = dict(m)
                 m_day = next((d for d in BIBLE_PLAN if d["day"] == m_dict["current_day"]), day_data)
-                m_msg = format_whatsapp_message(m_day, matched_books, m_dict["name"])
+                m_pfocus = get_pastoral_focus_for_day(m_day)
+                m_msg = format_whatsapp_message(m_day, matched_books, m_dict["name"], bedside_book, m_pfocus)
                 m_dict["individual_wa_url"] = get_direct_whatsapp_url(m_dict["phone"], m_msg)
                 members.append(m_dict)
 
@@ -611,14 +744,31 @@ class BibleStudyHandler(http.server.SimpleHTTPRequestHandler):
                     return
 
                 c.execute("""
-                INSERT INTO books (title, author, publisher, year, themes, summary, cover_color, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO books (title, author, publisher, year, themes, summary, cover_color, cover_image, is_bedside, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (title, author, data.get("publisher", ""), data.get("year"), data.get("themes", ""),
-                      data.get("summary", ""), data.get("cover_color", "#1e3a8a"), data.get("notes", "")))
+                      data.get("summary", ""), data.get("cover_color", "#1e3a8a"), data.get("cover_image"),
+                      int(data.get("is_bedside", 0)), data.get("notes", "")))
                 new_id = c.lastrowid
                 conn.commit()
                 conn.close()
                 self.send_json({"success": True, "id": new_id, "message": "Livro cadastrado com sucesso!"})
+                return
+            except Exception as e:
+                conn.close()
+                self.send_json({"error": str(e)}, 500)
+                return
+
+        # 4.1 /api/books/<id>/bedside -> Definir como Livro de Cabeceira Oficial
+        if path.startswith("/api/books/") and path.endswith("/bedside"):
+            try:
+                parts = path.split("/")
+                book_id = int(parts[3])
+                c.execute("UPDATE books SET is_bedside = 0")
+                c.execute("UPDATE books SET is_bedside = 1 WHERE id = ?", (book_id,))
+                conn.commit()
+                conn.close()
+                self.send_json({"success": True, "message": "Livro definido como Livro de Cabeceira Oficial!"})
                 return
             except Exception as e:
                 conn.close()
@@ -741,11 +891,12 @@ class BibleStudyHandler(http.server.SimpleHTTPRequestHandler):
                 c.execute("""
                 UPDATE books SET
                     title = ?, author = ?, publisher = ?, year = ?,
-                    themes = ?, summary = ?, cover_color = ?, notes = ?
+                    themes = ?, summary = ?, cover_color = ?, cover_image = ?, is_bedside = ?, notes = ?
                 WHERE id = ?
                 """, (data.get("title", "").strip(), data.get("author", "").strip(), data.get("publisher", ""),
                       data.get("year"), data.get("themes", ""), data.get("summary", ""),
-                      data.get("cover_color", "#1e3a8a"), data.get("notes", ""), book_id))
+                      data.get("cover_color", "#1e3a8a"), data.get("cover_image"),
+                      int(data.get("is_bedside", 0)), data.get("notes", ""), book_id))
                 conn.commit()
                 conn.close()
                 self.send_json({"success": True, "message": "Livro atualizado com sucesso!"})
