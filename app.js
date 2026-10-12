@@ -20,6 +20,11 @@ const state = {
   plan: [],
   filteredPlan: [],
   books: [],
+  bookCounts: { total: 90, in_progress: 1, pending: 89, completed: 0 },
+  bookStatusFilter: 'all',
+  bookCategoryFilter: 'all',
+  bookSearchQuery: '',
+  bookViewMode: 'grouped', // 'grouped' ou 'grid'
   settings: {},
   stats: {},
   currentFilter: 'all',
@@ -358,9 +363,101 @@ async function fetchPlan() {
 }
 
 async function fetchBooks() {
-  state.books = await apiGet('/books');
-  renderLibrary();
+  try {
+    const res = await apiGet('/books');
+    if (res && res.books) {
+      state.books = res.books.map(b => ({
+        ...b,
+        status: b.reading_status || b.status || 'Pendente'
+      }));
+      state.bookCounts = res.counts || {
+        total: state.books.length,
+        in_progress: state.books.filter(b => b.status === 'Em Andamento').length,
+        pending: state.books.filter(b => b.status === 'Pendente').length,
+        completed: state.books.filter(b => b.status === 'Finalizado').length
+      };
+    } else if (Array.isArray(res)) {
+      state.books = res.map(b => ({
+        ...b,
+        status: b.reading_status || b.status || 'Pendente'
+      }));
+      state.bookCounts = {
+        total: state.books.length,
+        in_progress: state.books.filter(b => b.status === 'Em Andamento').length,
+        pending: state.books.filter(b => b.status === 'Pendente').length,
+        completed: state.books.filter(b => b.status === 'Finalizado').length
+      };
+    }
+    updateLibraryCounters();
+    renderLibrary();
+  } catch (err) {
+    console.error('Erro ao buscar livros:', err);
+  }
 }
+
+function updateLibraryCounters() {
+  const c = state.bookCounts || {};
+  const totalEl = document.getElementById('lib-count-total');
+  const inprogEl = document.getElementById('lib-count-inprogress');
+  const pendEl = document.getElementById('lib-count-pending');
+  const compEl = document.getElementById('lib-count-completed');
+  if (totalEl) totalEl.textContent = c.total !== undefined ? c.total : state.books.length;
+  if (inprogEl) inprogEl.textContent = c.in_progress || 0;
+  if (pendEl) pendEl.textContent = c.pending || 0;
+  if (compEl) compEl.textContent = c.completed || 0;
+}
+
+async function updateBookStatus(bookId, newStatus, personalNotes = null) {
+  try {
+    const payload = { status: newStatus };
+    if (personalNotes !== null && personalNotes !== undefined) {
+      payload.notes = personalNotes;
+    }
+    await apiPost(`/books/${bookId}/status`, payload);
+
+    // Atualiza o estado local do livro
+    const book = state.books.find(b => b.id === bookId);
+    if (book) {
+      book.status = newStatus;
+      book.reading_status = newStatus;
+      if (personalNotes !== null && personalNotes !== undefined) {
+        book.user_notes = personalNotes;
+        book.personal_notes = personalNotes;
+      }
+    }
+
+    // Recalcula contadores
+    state.bookCounts = {
+      total: state.books.length,
+      in_progress: state.books.filter(b => b.status === 'Em Andamento').length,
+      pending: state.books.filter(b => b.status === 'Pendente' || !b.status).length,
+      completed: state.books.filter(b => b.status === 'Finalizado').length
+    };
+    updateLibraryCounters();
+    renderLibrary();
+
+    // Se estiver na aba hoje e o livro estiver listado, atualiza
+    const todayGrid = document.getElementById('today-books-grid');
+    if (todayGrid && state.currentDay) {
+      try {
+        const todayData = await apiGet(`/day/${state.currentDay}`);
+        renderTodaySection(todayData);
+      } catch (e) {
+        // Ignora se não conseguir atualizar hoje
+      }
+    }
+
+    const labelMap = {
+      'Em Andamento': 'Em Andamento 📖',
+      'Finalizado': 'Finalizado ✅',
+      'Pendente': 'Pendente ⏳'
+    };
+    showToast(`Status atualizado para "${labelMap[newStatus] || newStatus}"!`);
+  } catch (err) {
+    showToast('Erro ao atualizar status: ' + err.message, 'error');
+  }
+}
+
 
 async function fetchStats() {
   state.stats = await apiGet('/stats');
@@ -583,16 +680,46 @@ function renderTodaySection(data) {
         });
       }
     } else {
-      booksGrid.innerHTML = recommendedBooks.map(book => `
-        <div class="book-rec-card">
-          <div class="book-rec-spine" style="background: ${book.cover_color || '#1e3a8a'};"></div>
-          <div class="book-rec-content">
-            <h5 class="book-rec-title">${escapeHtml(book.title)}</h5>
-            <span class="book-rec-author">${escapeHtml(book.author)}</span>
-            <p class="book-rec-summary">${escapeHtml(book.summary || book.themes || '')}</p>
+      booksGrid.innerHTML = recommendedBooks.map(book => {
+        const bStatus = book.reading_status || book.status || 'Pendente';
+        return `
+          <div class="book-rec-card" data-book-id="${book.id}">
+            <div class="book-rec-spine" style="background: ${book.cover_color || '#1e3a8a'};"></div>
+            <div class="book-rec-content">
+              <h5 class="book-rec-title">${escapeHtml(book.title)}</h5>
+              <span class="book-rec-author">${escapeHtml(book.author)} ${book.publisher ? `(${escapeHtml(book.publisher)})` : ''}</span>
+              <p class="book-rec-summary">${escapeHtml(book.summary || book.themes || '')}</p>
+              
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid var(--border-subtle);">
+                <select class="select-status-dropdown" data-book-id="${book.id}" style="background: var(--bg-tertiary); color: #fff; border: 1px solid var(--border-subtle); padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.8rem; cursor: pointer;">
+                  <option value="Pendente" ${bStatus === 'Pendente' ? 'selected' : ''}>⏳ Pendente</option>
+                  <option value="Em Andamento" ${bStatus === 'Em Andamento' ? 'selected' : ''}>📖 Lendo</option>
+                  <option value="Finalizado" ${bStatus === 'Finalizado' ? 'selected' : ''}>✅ Concluído</option>
+                </select>
+                <button class="btn btn-ghost btn-sm open-book-detail-btn" data-id="${book.id}">
+                  <span>👁️</span> Detalhes
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
+
+      booksGrid.querySelectorAll('.select-status-dropdown').forEach(sel => {
+        sel.addEventListener('change', (e) => {
+          e.stopPropagation();
+          const id = parseInt(sel.getAttribute('data-book-id'), 10);
+          updateBookStatus(id, sel.value);
+        });
+      });
+
+      booksGrid.querySelectorAll('.open-book-detail-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const id = parseInt(btn.getAttribute('data-id'), 10);
+          openBookDetailModal(id);
+        });
+      });
     }
   }
 }
@@ -667,53 +794,262 @@ function filterAndRenderPlan() {
 }
 
 // 3. RENDERIZAR BIBLIOTECA
+const CANONICAL_CATEGORIES = [
+  { name: "Cabeceira & Ministério Pastoral", icon: "🛏️", plan: "Todos os 365 Dias (Leitura de Travesseiro Permanente e Prática Diária)" },
+  { name: "Antigo Testamento, Pentateuco & Arqueologia", icon: "📜", plan: "Dias 1–240 (Pentateuco, Livros Históricos e Profetas)" },
+  { name: "Novo Testamento, Evangelhos & Vida de Cristo", icon: "🕊️", plan: "Dias 241–365 (Evangelhos, Atos, Epístolas e Apocalipse)" },
+  { name: "Teologia Sistemática, Doutrina & Hermenêutica", icon: "🏛️", plan: "Dias 1–365 (Fundamentos Doutrinários, Exegese e Interpretação)" },
+  { name: "Línguas Originais (Grego & Hebraico)", icon: "🗣️", plan: "Dias 1–365 (Auxílio Linguístico Exegético para o AT e NT)" },
+  { name: "Comentários & Manuais Bíblicos Panorâmicos", icon: "📖", plan: "Dias 1–365 (Apoio Expositivo Versículo por Versículo)" },
+  { name: "História da Igreja Cristã", icon: "⏳", plan: "Dias 1–365 (Contexto Histórico do Povo de Deus e dos Pais da Igreja)" },
+  { name: "Vida Cristã, Oração, Avivamento & Família", icon: "🔥", plan: "Dias 1–365 (Devocional Prático, Santidade, Oração e Avivamento)" },
+  { name: "Missões, Evangelização & Educação Cristã", icon: "🌍", plan: "Dias 241–365 (A Grande Comissão e Formação de Discípulos)" },
+  { name: "Liderança, Desenvolvimento & Sociedade", icon: "💡", plan: "Dias 1–365 (Gestão Ministerial, Comunicação e Liderança Bíblica)" }
+];
+
+function createBookCardHtml(b) {
+  const isBedside = b.is_bedside === 1;
+  const bStatus = b.reading_status || b.status || 'Pendente';
+  const themesList = (b.themes || '').split(',').map(t => t.trim()).filter(Boolean);
+
+  return `
+    <div class="library-book-card ${isBedside ? 'is-bedside-card' : ''}" data-book-id="${b.id}">
+      <div class="book-card-spine-preview" style="background: ${b.cover_color || '#1e3a8a'};"></div>
+      
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem;">
+        <h4 class="book-card-title">${escapeHtml(b.title)}</h4>
+        ${isBedside ? '<span style="font-size: 0.78rem; color: var(--gold-light); font-weight: 800; white-space: nowrap;">⭐ Cabeceira</span>' : ''}
+      </div>
+
+      <div class="book-card-meta">
+        ${escapeHtml(b.author)} ${b.year ? `• ${b.year}` : ''} ${b.publisher ? `(${escapeHtml(b.publisher)})` : ''}
+      </div>
+
+      <div style="display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; margin: 0.2rem 0;">
+        <span class="tag-badge" style="color: var(--gold-light); border-color: rgba(212,175,55,0.3); font-weight: 700;">${escapeHtml(b.category || 'Teologia')}</span>
+        ${b.plan_link ? `<span class="tag-badge" style="font-size: 0.75rem;">🔗 Plano: ${escapeHtml(b.plan_link)}</span>` : ''}
+      </div>
+
+      <div class="book-card-themes">
+        ${themesList.slice(0, 4).map(t => `<span class="tag-badge">#${escapeHtml(t)}</span>`).join('')}
+      </div>
+
+      <p class="book-card-summary">${escapeHtml(b.summary || '')}</p>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding-top: 0.6rem; border-top: 1px solid var(--border-subtle); margin-top: auto;">
+        <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 700;">Status:</label>
+        <select class="select-status-dropdown" data-book-id="${b.id}" style="background: var(--bg-tertiary); color: #fff; border: 1px solid var(--border-subtle); padding: 0.35rem 0.6rem; border-radius: var(--radius-sm); font-size: 0.85rem; cursor: pointer;">
+          <option value="Pendente" ${bStatus === 'Pendente' ? 'selected' : ''}>⏳ Pendente</option>
+          <option value="Em Andamento" ${bStatus === 'Em Andamento' ? 'selected' : ''}>📖 Em Andamento</option>
+          <option value="Finalizado" ${bStatus === 'Finalizado' ? 'selected' : ''}>✅ Finalizado</option>
+        </select>
+      </div>
+
+      <div class="book-card-actions">
+        ${!isBedside ? `
+          <button class="btn-sm btn-secondary set-bedside-btn" data-id="${b.id}" title="Definir como Livro de Cabeceira">⭐ Cabeceira</button>
+        ` : `
+          <span style="font-size: 0.8rem; color: var(--gold-light); font-weight: 700; display: inline-flex; align-items: center; gap: 0.3rem;">⭐ Cabeceira Oficial</span>
+        `}
+        <button class="btn-sm btn-ghost open-book-detail-btn" data-id="${b.id}">👁️ Detalhes</button>
+        <button class="btn-sm btn-ghost edit-book-btn" data-id="${b.id}">✏️ Editar</button>
+        <button class="btn-sm btn-ghost delete-book-btn" data-id="${b.id}" style="color: var(--ruby-danger);">🗑️ Excluir</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderLibrary() {
-  const grid = document.getElementById('library-books-grid');
+  // 1. Vitrine do Livro de Cabeceira Oficial (#library-bedside-feature-slot)
+  const bedsideSlot = document.getElementById('library-bedside-feature-slot');
+  if (bedsideSlot) {
+    const bedsideBook = state.books.find(b => b.is_bedside === 1) || 
+                        state.books.find(b => (b.title || '').includes('Pastor Pentecostal')) || 
+                        state.books[0];
+    if (bedsideBook) {
+      const bStatus = bedsideBook.reading_status || bedsideBook.status || 'Em Andamento';
+      bedsideSlot.innerHTML = `
+        <div class="card-glass" style="border: 1px solid var(--gold-border); background: linear-gradient(135deg, rgba(212,175,55,0.1), rgba(15,23,42,0.9)); padding: 1.6rem; border-radius: var(--radius-lg); margin-bottom: 2rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem; margin-bottom: 0.6rem;">
+            <span style="font-size: 0.85rem; color: var(--gold-light); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;">
+              ⭐ LIVRO DE TRAVESSEIRO & CABECEIRA OFICIAL • LEITURA DIÁRIA OBRIGATÓRIA
+            </span>
+            <span class="tag-badge" style="background: rgba(212,175,55,0.2); color: var(--gold-light); border-color: var(--gold-border);">365 Dias</span>
+          </div>
+          <div class="book-card-spine-preview" style="background: var(--gold-primary); height: 5px; margin-bottom: 0.8rem;"></div>
+          <h3 style="font-family: var(--font-serif); font-size: 1.6rem; color: #fff; margin-bottom: 0.3rem;">${escapeHtml(bedsideBook.title)}</h3>
+          <div style="font-size: 0.9rem; color: var(--gold-light); margin-bottom: 0.8rem;">
+            <strong>${escapeHtml(bedsideBook.author)}</strong> • ${escapeHtml(bedsideBook.publisher || 'CPAD')} ${bedsideBook.year ? `(${bedsideBook.year})` : ''}
+          </div>
+          <div style="display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.8rem;">
+            <span class="tag-badge" style="color: var(--gold-light); border-color: rgba(212,175,55,0.4);">👑 Regra de Ouro</span>
+            <span class="tag-badge">📖 Teologia Pastoral</span>
+            <span class="tag-badge">🕊️ Práticas Pentecostais</span>
+          </div>
+          <p style="color: #cbd5e1; font-size: 0.9rem; line-height: 1.6; margin-bottom: 1rem;">
+            ${escapeHtml(bedsideBook.summary || 'Tratado clássico sobre a prática ministerial e vocação espiritual. Livro fixo de cabeceira acompanhando todos os dias da sua jornada bíblica.')}
+          </p>
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; border-top: 1px solid rgba(212,175,55,0.2); padding-top: 0.8rem;">
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <label style="font-size: 0.85rem; color: var(--gold-light); font-weight: 700;">Status da Leitura:</label>
+              <select class="select-status-dropdown" data-book-id="${bedsideBook.id}" style="background: var(--bg-tertiary); color: #fff; border: 1px solid var(--gold-border); padding: 0.35rem 0.6rem; border-radius: var(--radius-sm); font-size: 0.85rem; cursor: pointer;">
+                <option value="Em Andamento" ${bStatus === 'Em Andamento' ? 'selected' : ''}>📖 Lendo Atualmente (Cabeceira)</option>
+                <option value="Finalizado" ${bStatus === 'Finalizado' ? 'selected' : ''}>✅ Concluído</option>
+                <option value="Pendente" ${bStatus === 'Pendente' ? 'selected' : ''}>⏳ Pendente</option>
+              </select>
+            </div>
+            <button class="btn btn-secondary btn-sm open-book-detail-btn" data-id="${bedsideBook.id}">
+              <span>👁️</span> Detalhes & Anotações
+            </button>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  // 2. Container dos Livros da Biblioteca (suporta tanto #library-books-grid quanto #library-books-container)
+  const grid = document.getElementById('library-books-grid') || document.getElementById('library-books-container');
   if (!grid) return;
 
   if (state.books.length === 0) {
     grid.innerHTML = `
-      <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-muted);">
+      <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-muted); width: 100%;">
         <p style="font-size: 1.2rem; font-weight: 600;">Sua biblioteca ainda está vazia.</p>
-        <p style="font-size: 0.9rem; margin-top: 0.5rem;">Clique no botão acima "Cadastrar Novo Livro" para incluir as obras da sua estante!</p>
+        <p style="font-size: 0.9rem; margin-top: 0.5rem;">Clique em "Cadastrar Livro" para incluir obras na sua estante!</p>
       </div>
     `;
     return;
   }
 
-  grid.innerHTML = state.books.map(b => {
-    const themesList = (b.themes || '').split(',').map(t => t.trim()).filter(Boolean);
-    const isBedside = b.is_bedside === 1;
-    return `
-      <div class="library-book-card ${isBedside ? 'is-bedside-card' : ''}" data-book-id="${b.id}">
-        ${b.cover_image ? `
-          <img src="${b.cover_image}" alt="${escapeHtml(b.title)}" class="book-card-cover-thumb" onerror="this.style.display='none'">
-        ` : `
-          <div class="book-card-spine-preview" style="background: ${b.cover_color || '#1e3a8a'};"></div>
-        `}
-        <div class="book-card-title">${escapeHtml(b.title)}</div>
-        <div class="book-card-meta">${escapeHtml(b.author)} ${b.year ? `• ${b.year}` : ''} ${b.publisher ? `(${escapeHtml(b.publisher)})` : ''}</div>
-        
-        <div class="book-card-themes">
-          ${themesList.map(t => `<span class="tag-badge">${escapeHtml(t)}</span>`).join('')}
-        </div>
+  // Filtragem dos livros
+  const query = (state.bookSearchQuery || '').toLowerCase().trim();
+  const statusFilter = state.bookStatusFilter;
+  const catFilter = state.bookCategoryFilter;
 
-        <p class="book-card-summary">${escapeHtml(b.summary || '')}</p>
+  const filtered = state.books.filter(b => {
+    const bStatus = b.reading_status || b.status || 'Pendente';
+    if (statusFilter !== 'all' && bStatus !== statusFilter) return false;
+    if (catFilter !== 'all' && b.category !== catFilter) return false;
+    if (query) {
+      const matchTitle = (b.title || '').toLowerCase().includes(query);
+      const matchAuthor = (b.author || '').toLowerCase().includes(query);
+      const matchCategory = (b.category || '').toLowerCase().includes(query);
+      const matchPublisher = (b.publisher || '').toLowerCase().includes(query);
+      const matchThemes = (b.themes || '').toLowerCase().includes(query);
+      const matchSummary = (b.summary || '').toLowerCase().includes(query);
+      if (!matchTitle && !matchAuthor && !matchCategory && !matchPublisher && !matchThemes && !matchSummary) {
+        return false;
+      }
+    }
+    return true;
+  });
 
-        <div class="book-card-actions">
-          ${!isBedside ? `
-            <button class="btn-sm btn-secondary set-bedside-btn" data-id="${b.id}" title="Definir como Livro de Cabeceira">⭐ Livro de Travesseiro</button>
-          ` : `
-            <span style="font-size: 0.8rem; color: var(--gold-light); font-weight: 700; display: inline-flex; align-items: center; gap: 0.3rem;">⭐ Cabeceira Oficial</span>
-          `}
-          <button class="btn-sm btn-ghost edit-book-btn" data-id="${b.id}">✏️ Editar</button>
-          <button class="btn-sm btn-ghost delete-book-btn" data-id="${b.id}" style="color: var(--ruby-danger);">🗑️ Excluir</button>
-        </div>
+  if (filtered.length === 0) {
+    grid.innerHTML = `
+      <div style="text-align: center; padding: 4rem 1rem; color: var(--text-muted); width: 100%;">
+        <p style="font-size: 1.2rem; font-weight: 600;">Nenhum livro encontrado com esses filtros.</p>
+        <p style="font-size: 0.9rem; margin-top: 0.5rem;">Tente ajustar o termo de busca ou selecionar outro tema teológico acima.</p>
+        <button class="btn btn-secondary btn-sm" id="btn-reset-lib-filters" style="margin-top: 1rem;">
+          🔄 Limpar Filtros da Estante
+        </button>
       </div>
     `;
-  }).join('');
+    const resetBtn = document.getElementById('btn-reset-lib-filters');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', () => {
+        state.bookStatusFilter = 'all';
+        state.bookCategoryFilter = 'all';
+        state.bookSearchQuery = '';
+        const searchInput = document.getElementById('library-search-input');
+        if (searchInput) searchInput.value = '';
+        const catSelect = document.getElementById('library-category-select');
+        if (catSelect) catSelect.value = 'all';
+        document.querySelectorAll('[data-book-status]').forEach(c => {
+          c.classList.toggle('active', c.getAttribute('data-book-status') === 'all');
+        });
+        document.querySelectorAll('.lib-stat-pill').forEach(c => {
+          c.classList.toggle('active', c.getAttribute('data-status-filter') === 'all');
+        });
+        renderLibrary();
+      });
+    }
+    return;
+  }
 
-  grid.querySelectorAll('.set-bedside-btn').forEach(btn => {
+  // Renderização: Modo Agrupado por Tema vs Grade Direta
+  if (state.bookViewMode === 'grouped') {
+    // Agrupa os livros filtrados por categoria
+    const groups = {};
+    filtered.forEach(b => {
+      const cat = b.category || 'Outros Temas Teológicos';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(b);
+    });
+
+    // Ordena de acordo com a lista canônica de categorias
+    const sortedCategories = CANONICAL_CATEGORIES.filter(c => groups[c.name]);
+    Object.keys(groups).forEach(catName => {
+      if (!CANONICAL_CATEGORIES.some(c => c.name === catName)) {
+        sortedCategories.push({ name: catName, icon: '📚', plan: 'Apoio Teológico Geral' });
+      }
+    });
+
+    grid.innerHTML = sortedCategories.map(cat => {
+      const bList = groups[cat.name];
+      return `
+        <div class="thematic-group-section" style="margin-bottom: 2.5rem; width: 100%;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.6rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--border-subtle); margin-bottom: 1.2rem;">
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <span style="font-size: 1.4rem;">${cat.icon}</span>
+              <h3 style="font-family: var(--font-serif); font-size: 1.25rem; color: #fff;">${escapeHtml(cat.name)}</h3>
+              <span class="tag-badge" style="background: rgba(255,255,255,0.06); color: var(--gold-light);">${bList.length} ${bList.length === 1 ? 'livro' : 'livros'}</span>
+            </div>
+            <div class="tag-badge" style="color: var(--text-muted); font-size: 0.78rem;">
+              📅 Plano: ${escapeHtml(cat.plan)}
+            </div>
+          </div>
+          <div class="library-shelf-container">
+            ${bList.map(createBookCardHtml).join('')}
+          </div>
+        </div>
+      `;
+    }).join('');
+  } else {
+    // Modo Grade Completa Direta
+    grid.innerHTML = `
+      <div class="library-shelf-container" style="width: 100%;">
+        ${filtered.map(createBookCardHtml).join('')}
+      </div>
+    `;
+  }
+
+  // Vincula eventos nos elementos renderizados
+  attachLibraryItemEvents(document.getElementById('tab-library'));
+}
+
+function attachLibraryItemEvents(container) {
+  if (!container) return;
+
+  // 1. Mudança de status pelo seletor dropdown
+  container.querySelectorAll('.select-status-dropdown').forEach(sel => {
+    sel.addEventListener('change', (e) => {
+      e.stopPropagation();
+      const id = parseInt(sel.getAttribute('data-book-id'), 10);
+      updateBookStatus(id, sel.value);
+    });
+  });
+
+  // 2. Abrir Modal de Detalhes
+  container.querySelectorAll('.open-book-detail-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = parseInt(btn.getAttribute('data-id'), 10);
+      openBookDetailModal(id);
+    });
+  });
+
+  // 3. Definir Livro de Cabeceira
+  container.querySelectorAll('.set-bedside-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const id = parseInt(btn.getAttribute('data-id'), 10);
@@ -728,7 +1064,8 @@ function renderLibrary() {
     });
   });
 
-  grid.querySelectorAll('.edit-book-btn').forEach(btn => {
+  // 4. Editar livro
+  container.querySelectorAll('.edit-book-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const id = parseInt(btn.getAttribute('data-id'), 10);
@@ -736,15 +1073,20 @@ function renderLibrary() {
     });
   });
 
-  grid.querySelectorAll('.delete-book-btn').forEach(btn => {
+  // 5. Excluir livro
+  container.querySelectorAll('.delete-book-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const id = parseInt(btn.getAttribute('data-id'), 10);
-      if (confirm('Tem certeza que deseja remover este livro da sua biblioteca?')) {
-        await apiDelete(`/books/${id}`);
-        showToast('Livro removido com sucesso!');
-        await fetchBooks();
-        await fetchStats();
+      if (confirm('Tem certeza que deseja remover este livro da sua estante?')) {
+        try {
+          await apiDelete(`/books/${id}`);
+          showToast('Livro removido da sua estante!');
+          await fetchBooks();
+          await fetchStats();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
       }
     });
   });
@@ -886,6 +1228,110 @@ function openEditBookModal(bookId) {
   }
 
   document.getElementById('book-modal').classList.add('open');
+}
+
+// ================= MODAL DETALHES DA OBRA & STATUS =================
+function openBookDetailModal(bookId) {
+  const book = state.books.find(b => b.id === bookId);
+  if (!book) return;
+
+  const modal = document.getElementById('book-detail-modal');
+  const titleEl = document.getElementById('book-detail-modal-title');
+  const bodyEl = document.getElementById('book-detail-modal-body');
+  if (!modal || !bodyEl) return;
+
+  if (titleEl) titleEl.textContent = book.title;
+  const bStatus = book.reading_status || book.status || 'Pendente';
+  const isBedside = book.is_bedside === 1;
+  const themesList = (book.themes || '').split(',').map(t => t.trim()).filter(Boolean);
+
+  bodyEl.innerHTML = `
+    <div style="display: flex; flex-direction: column; gap: 1.2rem;">
+      <div class="book-card-spine-preview" style="background: ${book.cover_color || '#1e3a8a'}; height: 5px;"></div>
+      
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; flex-wrap: wrap;">
+          <h3 style="font-family: var(--font-serif); font-size: 1.6rem; color: #fff;">${escapeHtml(book.title)}</h3>
+          ${isBedside ? '<span class="tag-badge" style="background: rgba(212,175,55,0.2); color: var(--gold-light); border-color: var(--gold-border);">⭐ Cabeceira Oficial</span>' : ''}
+        </div>
+        <p style="font-size: 0.95rem; color: var(--gold-light); margin-top: 0.3rem;">
+          <strong>${escapeHtml(book.author)}</strong> • ${escapeHtml(book.publisher || 'CPAD / Editora Teológica')} ${book.year ? `(${book.year})` : ''}
+        </p>
+      </div>
+
+      <div style="background: var(--bg-tertiary); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 0.5rem;">
+        <div style="font-size: 0.85rem;">
+          <span style="color: var(--text-muted); font-weight: 700;">🏷️ Categoria Teológica:</span>
+          <span style="color: var(--gold-light); font-weight: 700; margin-left: 0.3rem;">${escapeHtml(book.category || 'Teologia Geral')}</span>
+        </div>
+        <div style="font-size: 0.85rem;">
+          <span style="color: var(--text-muted); font-weight: 700;">🔗 Vinculado ao Plano:</span>
+          <span style="color: #fff; margin-left: 0.3rem;">${escapeHtml(book.plan_link || 'Todos os 365 Dias')}</span>
+        </div>
+        <div style="font-size: 0.85rem;">
+          <span style="color: var(--text-muted); font-weight: 700;">🔖 Temas:</span>
+          <span style="margin-left: 0.3rem;">${themesList.map(t => `<span class="tag-badge">#${escapeHtml(t)}</span>`).join(' ')}</span>
+        </div>
+      </div>
+
+      <div>
+        <h5 style="color: #fff; font-size: 0.95rem; font-weight: 700; margin-bottom: 0.4rem;">📖 Resumo & Profundidade do Livro</h5>
+        <p style="color: #cbd5e1; font-size: 0.9rem; line-height: 1.6;">${escapeHtml(book.summary || 'Excelente literatura teológica para aprofundar sua compreensão e prática bíblica.')}</p>
+      </div>
+
+      <div style="background: var(--bg-secondary); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+        <label for="detail-status-select" style="display: block; font-size: 0.85rem; color: var(--gold-light); font-weight: 700; margin-bottom: 0.4rem;">
+          Seu Status de Leitura Pessoal:
+        </label>
+        <select id="detail-status-select" class="standard-select" style="width: 100%;">
+          <option value="Pendente" ${bStatus === 'Pendente' ? 'selected' : ''}>⏳ Pendente (Fila de Leitura)</option>
+          <option value="Em Andamento" ${bStatus === 'Em Andamento' ? 'selected' : ''}>📖 Em Andamento (Lendo Atualmente)</option>
+          <option value="Finalizado" ${bStatus === 'Finalizado' ? 'selected' : ''}>✅ Finalizado (Leitura Concluída)</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="detail-notes-input" style="display: block; font-size: 0.85rem; color: var(--text-muted); font-weight: 700; margin-bottom: 0.4rem;">
+          Suas Anotações Pessoais & Insights do Livro:
+        </label>
+        <textarea id="detail-notes-input" rows="4" class="standard-textarea" style="width: 100%;" placeholder="Registre suas anotações, capítulos lidos, citações marcantes e aplicações para o ministério e vida diária...">${escapeHtml(book.user_notes || book.personal_notes || '')}</textarea>
+      </div>
+
+      <div style="display: flex; gap: 0.8rem; justify-content: flex-end; align-items: center; border-top: 1px solid var(--border-subtle); padding-top: 1rem; margin-top: 0.5rem;">
+        ${!isBedside ? `
+          <button class="btn btn-secondary btn-sm" id="modal-set-bedside-btn">
+            <span>⭐</span> Definir como Cabeceira Oficial
+          </button>
+        ` : ''}
+        <button class="btn btn-primary btn-sm" id="modal-save-notes-btn">
+          <span>💾</span> Salvar Status e Anotações
+        </button>
+      </div>
+    </div>
+  `;
+
+  modal.classList.add('open');
+
+  const saveBtn = document.getElementById('modal-save-notes-btn');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      const newStatus = document.getElementById('detail-status-select').value;
+      const notes = document.getElementById('detail-notes-input').value;
+      await updateBookStatus(book.id, newStatus, notes);
+      modal.classList.remove('open');
+    });
+  }
+
+  const setBedsideBtn = document.getElementById('modal-set-bedside-btn');
+  if (setBedsideBtn) {
+    setBedsideBtn.addEventListener('click', async () => {
+      await apiPost(`/books/${book.id}/bedside`, {});
+      showToast('Livro definido como Livro de Cabeceira Oficial!');
+      modal.classList.remove('open');
+      await fetchBooks();
+      await fetchTodayData();
+    });
+  }
 }
 
 // ================= EVENT LISTENERS =================
@@ -1043,10 +1489,42 @@ function setupEventListeners() {
     });
   }
 
+  // Botão de Atualizar Versão / Limpar Cache PWA
+  const forceUpdateBtn = document.getElementById('btn-force-update');
+  if (forceUpdateBtn) {
+    forceUpdateBtn.addEventListener('click', async () => {
+      forceUpdateBtn.disabled = true;
+      forceUpdateBtn.innerHTML = '<span>⏳</span> Limpando Cache...';
+      try {
+        if ('serviceWorker' in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          for (let reg of registrations) {
+            await reg.unregister();
+          }
+        }
+        if ('caches' in window) {
+          const cacheKeys = await caches.keys();
+          for (let key of cacheKeys) {
+            await caches.delete(key);
+          }
+        }
+        localStorage.removeItem('jb365_sw_version');
+        showToast('Atualização concluída com sucesso! Recarregando sistema...');
+        setTimeout(() => {
+          window.location.reload(true);
+        }, 600);
+      } catch (err) {
+        showToast('Erro ao limpar cache: ' + err.message, 'error');
+        forceUpdateBtn.disabled = false;
+        forceUpdateBtn.innerHTML = '<span>🔄</span> Atualizar Versão / Limpar Cache';
+      }
+    });
+  }
+
   // 8. Filtros do Plano 365
-  document.querySelectorAll('.filter-chip').forEach(chip => {
+  document.querySelectorAll('.plan-filters-card .filter-chip').forEach(chip => {
     chip.addEventListener('click', () => {
-      document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      document.querySelectorAll('.plan-filters-card .filter-chip').forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
       state.currentFilter = chip.getAttribute('data-filter');
       filterAndRenderPlan();
@@ -1070,6 +1548,84 @@ function setupEventListeners() {
     });
   }
 
+  // 8.1 Controles da Biblioteca Teológica
+  // Filtros de status (Chips)
+  document.querySelectorAll('[data-book-status]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('[data-book-status]').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      const statusVal = chip.getAttribute('data-book-status');
+      state.bookStatusFilter = statusVal;
+      
+      // Sincroniza pílulas do ribbon
+      document.querySelectorAll('.lib-stat-pill').forEach(pill => {
+        pill.classList.toggle('active', pill.getAttribute('data-status-filter') === statusVal);
+      });
+      renderLibrary();
+    });
+  });
+
+  // Filtros do ribbon superior da biblioteca
+  document.querySelectorAll('.lib-stat-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      document.querySelectorAll('.lib-stat-pill').forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      const statusVal = pill.getAttribute('data-status-filter');
+      state.bookStatusFilter = statusVal;
+
+      // Sincroniza chips
+      document.querySelectorAll('[data-book-status]').forEach(c => {
+        c.classList.toggle('active', c.getAttribute('data-book-status') === statusVal);
+      });
+      renderLibrary();
+    });
+  });
+
+  // Busca na Biblioteca
+  const libSearchInput = document.getElementById('library-search-input');
+  if (libSearchInput) {
+    libSearchInput.addEventListener('input', (e) => {
+      state.bookSearchQuery = e.target.value;
+      renderLibrary();
+    });
+  }
+
+  const clearLibSearchBtn = document.getElementById('clear-lib-search-btn');
+  if (clearLibSearchBtn) {
+    clearLibSearchBtn.addEventListener('click', () => {
+      if (libSearchInput) libSearchInput.value = '';
+      state.bookSearchQuery = '';
+      renderLibrary();
+    });
+  }
+
+  // Seletor de Categoria Teológica
+  const libCatSelect = document.getElementById('library-category-select');
+  if (libCatSelect) {
+    libCatSelect.addEventListener('change', (e) => {
+      state.bookCategoryFilter = e.target.value;
+      renderLibrary();
+    });
+  }
+
+  // Alternância do Modo de Visualização (Agrupado por Tema vs Grade)
+  const btnViewAgrupado = document.getElementById('btn-view-grouped');
+  const btnViewGrade = document.getElementById('btn-view-grid');
+  if (btnViewAgrupado && btnViewGrade) {
+    btnViewAgrupado.addEventListener('click', () => {
+      btnViewAgrupado.classList.add('active');
+      btnViewGrade.classList.remove('active');
+      state.bookViewMode = 'grouped';
+      renderLibrary();
+    });
+    btnViewGrade.addEventListener('click', () => {
+      btnViewGrade.classList.add('active');
+      btnViewAgrupado.classList.remove('active');
+      state.bookViewMode = 'grid';
+      renderLibrary();
+    });
+  }
+
   // 9. Modais de Livro
   const addBookBtn = document.getElementById('open-add-book-modal-btn');
   if (addBookBtn) addBookBtn.addEventListener('click', openAddBookModal);
@@ -1081,6 +1637,23 @@ function setupEventListeners() {
 
   const closeDayModalBtn = document.getElementById('close-day-modal-btn');
   if (closeDayModalBtn) closeDayModalBtn.addEventListener('click', () => document.getElementById('day-detail-modal').classList.remove('open'));
+
+  const closeBookDetailModalBtn = document.getElementById('close-book-detail-modal-btn');
+  if (closeBookDetailModalBtn) {
+    closeBookDetailModalBtn.addEventListener('click', () => {
+      const modal = document.getElementById('book-detail-modal');
+      if (modal) modal.classList.remove('open');
+    });
+  }
+
+  // Fechar qualquer modal ao clicar fora (no backdrop)
+  document.querySelectorAll('.modal-overlay').forEach(modal => {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.classList.remove('open');
+      }
+    });
+  });
 
   // 10. Submit formulário de livro
   const bookForm = document.getElementById('book-form');

@@ -15,7 +15,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="/manifest.json">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=3.1">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22><text y=%2226%22 font-size=%2228%22>📖</text></svg>">
 </head>
 <body class="theme-dark">
@@ -74,6 +74,10 @@
           <span id="header-streak-count">0</span>
           <span class="streak-label">dias</span>
         </div>
+
+        <button id="btn-force-update" class="icon-circle-btn" title="Atualizar Versão / Limpar Cache (Garante atualização no Render)" aria-label="Atualizar versão">
+          <span style="font-size: 1.05rem;">🔄</span>
+        </button>
 
         <button id="theme-toggle-btn" class="icon-circle-btn" title="Alternar Modo Claro / Escuro" aria-label="Alternar tema">
           <span id="theme-icon">🌙</span>
@@ -278,19 +282,100 @@
 
     <!-- ================= SEÇÃO 3: MINHA BIBLIOTECA ================= -->
     <section id="tab-library" class="tab-pane" role="tabpanel">
+      <!-- HEADER DA BIBLIOTECA COM CONTADORES -->
       <div class="section-header-banner">
         <div>
-          <h2 class="page-title">Minha Biblioteca de Livros</h2>
-          <p class="page-description">Cadastre os livros da sua estante. O sistema conecta os temas dos seus livros aos dias correspondentes de leitura bíblica!</p>
+          <h2 class="page-title">Minha Biblioteca Teológica & Estante Pessoal</h2>
+          <p class="page-description">
+            90 obras catalogadas da sua estante com fotos reais de capa. Marque o status de leitura individual de cada livro e aprofunde os temas correspondentes ao seu plano diário da Bíblia!
+          </p>
         </div>
-        <button class="btn btn-primary" id="open-add-book-modal-btn">
-          <span>➕</span> Cadastrar Novo Livro
-        </button>
+        <div class="library-header-actions-group">
+          <button class="btn btn-primary" id="open-add-book-modal-btn">
+            <span>➕</span> Cadastrar Livro
+          </button>
+        </div>
       </div>
 
-      <!-- GRID DOS LIVROS CADASTRADOS -->
-      <div class="library-shelf-container" id="library-books-grid">
-        <!-- Cards dos livros gerados via JS -->
+      <!-- PAINEL DE CONTADORES DE LEITURA (MULTI-USUÁRIO) -->
+      <div class="library-stats-ribbon">
+        <div class="lib-stat-pill active" id="stat-pill-all" data-status-filter="all">
+          <span class="pill-icon">📚</span>
+          <span class="pill-label">Total na Estante:</span>
+          <strong id="lib-count-total">90</strong>
+        </div>
+        <div class="lib-stat-pill stat-inprogress" id="stat-pill-inprogress" data-status-filter="Em Andamento">
+          <span class="pill-icon">📖</span>
+          <span class="pill-label">Em Andamento:</span>
+          <strong id="lib-count-inprogress">1</strong>
+        </div>
+        <div class="lib-stat-pill stat-pending" id="stat-pill-pending" data-status-filter="Pendente">
+          <span class="pill-icon">⏳</span>
+          <span class="pill-label">Pendentes:</span>
+          <strong id="lib-count-pending">89</strong>
+        </div>
+        <div class="lib-stat-pill stat-completed" id="stat-pill-completed" data-status-filter="Finalizado">
+          <span class="pill-icon">✅</span>
+          <span class="pill-label">Finalizados:</span>
+          <strong id="lib-count-completed">0</strong>
+        </div>
+      </div>
+
+      <!-- FILTROS, BUSCA E ALTERNÂNCIA DE VISÃO -->
+      <div class="library-controls-card">
+        <div class="library-controls-top-row">
+          <div class="search-input-box flex-2">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="library-search-input" placeholder="Buscar por título, autor, tema, editora ou palavras-chave...">
+            <button id="clear-lib-search-btn" class="clear-btn" title="Limpar busca">✕</button>
+          </div>
+
+          <div class="select-category-box flex-1">
+            <select id="library-category-select" class="standard-select" aria-label="Filtrar por tema teológico">
+              <option value="all">🎯 Todos os Temas Teológicos (10 Categorias)</option>
+              <option value="Cabeceira & Ministério Pastoral">🛏️ Cabeceira & Ministério Pastoral</option>
+              <option value="Antigo Testamento, Pentateuco & Arqueologia">📜 Antigo Testamento, Pentateuco & Arqueologia</option>
+              <option value="Novo Testamento, Evangelhos & Vida de Cristo">🕊️ Novo Testamento, Evangelhos & Vida de Cristo</option>
+              <option value="Teologia Sistemática, Doutrina & Hermenêutica">🏛️ Teologia Sistemática, Doutrina & Hermenêutica</option>
+              <option value="Línguas Originais (Grego & Hebraico)">🗣️ Línguas Originais (Grego & Hebraico)</option>
+              <option value="Comentários & Manuais Bíblicos Panorâmicos">📖 Comentários & Manuais Bíblicos Panorâmicos</option>
+              <option value="História da Igreja Cristã">⏳ História da Igreja Cristã</option>
+              <option value="Vida Cristã, Oração, Avivamento & Família">🔥 Vida Cristã, Oração, Avivamento & Família</option>
+              <option value="Missões, Evangelização & Educação Cristã">🌍 Missões, Evangelização & Educação Cristã</option>
+              <option value="Liderança, Desenvolvimento & Sociedade">💡 Liderança, Desenvolvimento & Sociedade</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="library-controls-bottom-row">
+          <!-- Filtro de Status de Leitura -->
+          <div class="filter-buttons-group">
+            <button class="filter-chip active" data-book-status="all">Todos os Livros</button>
+            <button class="filter-chip" data-book-status="Em Andamento">📖 Lendo Atualmente</button>
+            <button class="filter-chip" data-book-status="Pendente">⏳ Fila / Pendentes</button>
+            <button class="filter-chip" data-book-status="Finalizado">✅ Leituras Concluídas</button>
+          </div>
+
+          <!-- Alternar Modo de Visualização -->
+          <div class="view-mode-toggle">
+            <button class="btn-toggle-view active" id="btn-view-grouped" title="Agrupar livros por tema teológico com vínculo ao plano bíblico">
+              <span>🏷️</span> Agrupados por Tema
+            </button>
+            <button class="btn-toggle-view" id="btn-view-grid" title="Exibir todos os livros em grade única contínua">
+              <span>📚</span> Grade Completa
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- LIVRO DE CABECEIRA EM DESTAQUE NA ESTANTE -->
+      <div id="library-bedside-feature-slot">
+        <!-- Renderizado via JS no topo da biblioteca -->
+      </div>
+
+      <!-- CONTAINER PRINCIPAL DOS LIVROS (AGRUPADOS OU EM GRADE) -->
+      <div id="library-books-grid" class="library-shelf-container">
+        <!-- Preenchido dinamicamente pelo app.js -->
       </div>
     </section>
 
@@ -706,6 +791,19 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <!-- ================= MODAL: DETALHES & STATUS DO LIVRO ================= -->
+  <div id="book-detail-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal-content modal-content-lg">
+      <div class="modal-header">
+        <h3 class="modal-title" id="book-detail-modal-title">Detalhes da Obra</h3>
+        <button class="modal-close-btn" id="close-book-detail-modal-btn" aria-label="Fechar modal">✕</button>
+      </div>
+      <div class="modal-body" id="book-detail-modal-body">
+        <!-- Renderizado dinamicamente via JS -->
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js?v=3.1"></script>
 </body>
 </html>

@@ -155,7 +155,7 @@ def get_db_connection():
 
 
 def init_multiuser_db():
-    """Migração automática para garantir suporte a múltiplos usuários e livro de cabeceira."""
+    """Migração automática para garantir suporte a múltiplos usuários, status de leitura e catálogo de livros."""
     conn = get_db_connection()
     c = conn.cursor()
 
@@ -190,46 +190,80 @@ def init_multiuser_db():
         except Exception:
             pass
 
-    # 3. Adiciona colunas cover_image e is_bedside em books se não existirem
+    # 3. Garante colunas estendidas em books
     c.execute("PRAGMA table_info(books)")
     book_columns = [row["name"] for row in c.fetchall()]
-    if "cover_image" not in book_columns:
-        try:
-            c.execute("ALTER TABLE books ADD COLUMN cover_image TEXT")
-        except Exception:
-            pass
-    if "is_bedside" not in book_columns:
-        try:
-            c.execute("ALTER TABLE books ADD COLUMN is_bedside INTEGER DEFAULT 0")
-        except Exception:
-            pass
+    needed_cols = {
+        "category": "TEXT DEFAULT 'Geral'",
+        "plan_link": "TEXT DEFAULT ''",
+        "plan_days": "TEXT DEFAULT ''",
+        "cover_image": "TEXT DEFAULT ''",
+        "is_bedside": "INTEGER DEFAULT 0"
+    }
+    for col, col_type in needed_cols.items():
+        if col not in book_columns:
+            try:
+                c.execute(f"ALTER TABLE books ADD COLUMN {col} {col_type}")
+            except Exception:
+                pass
 
-    # 4. Garante que "O Pastor Pentecostal" está cadastrado e ativo como Livro de Cabeceira Oficial
-    c.execute("SELECT id FROM books WHERE title LIKE '%Pastor Pentecostal%'")
-    pastor_book = c.fetchone()
-    if not pastor_book:
-        c.execute("""
-        INSERT INTO books (title, author, publisher, year, themes, summary, cover_color, cover_image, is_bedside, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            "O Pastor Pentecostal: Teologia e Práticas Pastorais",
-            "Thomas E. Trask, Wayde I. Goodall & Zenas J. Bicket (Orgs.)",
-            "CPAD", 2005,
-            "Liderança, Pastor, Ministério, Espírito Santo, Oração, Avivamento, Família, Pregação, Aconselhamento, Dons Espirituais, Missões, Integridade, Unção, Batalha Espiritual, Vocação, Cuidado do Rebanho, Discipulado",
-            "Manual clássico e devocional de cabeceira da CPAD. Obra fundamental de teologia e prática pastoral que reúne orientações práticas e espirituais para líderes, pastores e estudantes da Bíblia sobre o poder do Espírito Santo, integridade ministerial, oração e pastoreio.",
-            "#1e3a5f", "img/o_pastor_pentecostal.jpg", 1,
-            "⭐ LIVRO DE TRAVESSEIRO & CABECEIRA OFICIAL: Acompanhamento diário das orientações teológicas e pastorais pentecostais em conexão com a leitura bíblica."
-        ))
-    else:
-        c.execute("""
-        UPDATE books SET 
-            is_bedside = 1,
-            cover_image = 'img/o_pastor_pentecostal.jpg',
-            publisher = 'CPAD',
-            author = 'Thomas E. Trask, Wayde I. Goodall & Zenas J. Bicket (Orgs.)',
-            themes = 'Liderança, Pastor, Ministério, Espírito Santo, Oração, Avivamento, Família, Pregação, Aconselhamento, Dons Espirituais, Missões, Integridade, Unção, Batalha Espiritual, Vocação, Cuidado do Rebanho, Discipulado'
-        WHERE id = ?
-        """, (pastor_book["id"],))
+    # 4. Tabela de Status de Leitura por Usuário (Pendente, Em Andamento, Finalizado)
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS user_book_status (
+        user_id INTEGER NOT NULL,
+        book_id INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Pendente',
+        personal_notes TEXT DEFAULT '',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, book_id)
+    )
+    """)
+
+    # 5. Sincroniza os 90 livros do catálogo oficial
+    try:
+        from catalog_data import ALL_BOOKS
+        for b in ALL_BOOKS:
+            c.execute("SELECT id FROM books WHERE title = ? OR (id = ? AND id <= 90)", (b["title"], b["id"]))
+            row = c.fetchone()
+            if row:
+                book_id = row[0]
+                c.execute("""
+                UPDATE books SET
+                    title = ?, author = ?, publisher = ?, year = ?,
+                    category = ?, themes = ?, summary = ?,
+                    plan_link = ?, plan_days = ?, cover_image = ?,
+                    is_bedside = ?, notes = ?
+                WHERE id = ?
+                """, (
+                    b["title"], b["author"], b["publisher"], b["year"],
+                    b["category"], b["themes"], b["summary"],
+                    b["plan_link"], b["plan_days"], b["cover_image"],
+                    b["is_bedside"], b["notes"], book_id
+                ))
+            else:
+                c.execute("""
+                INSERT INTO books (
+                    id, title, author, publisher, year, category, themes,
+                    summary, plan_link, plan_days, cover_image, is_bedside, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    b["id"], b["title"], b["author"], b["publisher"], b["year"],
+                    b["category"], b["themes"], b["summary"],
+                    b["plan_link"], b["plan_days"], b["cover_image"],
+                    b["is_bedside"], b["notes"]
+                ))
+        
+        # Garante O Pastor Pentecostal em 'Em Andamento' para o usuário 1
+        c.execute("SELECT id FROM books WHERE is_bedside = 1 LIMIT 1")
+        bedside_row = c.fetchone()
+        if bedside_row:
+            c.execute("""
+            INSERT INTO user_book_status (user_id, book_id, status)
+            VALUES (1, ?, 'Em Andamento')
+            ON CONFLICT(user_id, book_id) DO NOTHING
+            """, (bedside_row[0],))
+    except Exception as err:
+        print(f"[Aviso] Sincronização do catálogo: {err}")
 
     conn.commit()
     conn.close()
@@ -238,16 +272,23 @@ def init_multiuser_db():
 init_multiuser_db()
 
 
-def get_matching_books(tags):
-    """Retorna livros da biblioteca que compartilham tags ou temas com a leitura do dia."""
+def get_matching_books(tags, user_id=1):
+    """Retorna livros da biblioteca que compartilham tags ou temas com a leitura do dia, incluindo status do usuário."""
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT * FROM books")
+    c.execute("""
+    SELECT b.*,
+           COALESCE(ubs.status, 'Pendente') AS reading_status,
+           COALESCE(ubs.personal_notes, '') AS user_notes
+    FROM books b
+    LEFT JOIN user_book_status ubs ON b.id = ubs.book_id AND ubs.user_id = ?
+    ORDER BY b.is_bedside DESC, b.id ASC
+    """, (user_id,))
     all_books = [dict(row) for row in c.fetchall()]
     conn.close()
 
     if not tags:
-        return all_books[:2]
+        return all_books[:3]
 
     matched = []
     tags_lower = [t.lower().strip() for t in tags]
@@ -255,16 +296,17 @@ def get_matching_books(tags):
     for book in all_books:
         book_themes = (book.get("themes") or "").lower()
         book_title = (book.get("title") or "").lower()
+        book_cat = (book.get("category") or "").lower()
         score = 0
         for tag in tags_lower:
-            if tag in book_themes or tag in book_title:
+            if tag in book_themes or tag in book_title or tag in book_cat:
                 score += 1
         if score > 0:
             matched.append((score, book))
 
     matched.sort(key=lambda x: x[0], reverse=True)
     results = [item[1] for item in matched]
-    return results[:3] if results else all_books[:2]
+    return results[:3] if results else all_books[:3]
 
 
 class BibleStudyHandler(http.server.SimpleHTTPRequestHandler):
@@ -347,7 +389,12 @@ class BibleStudyHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", content_type)
                 self.send_header("Content-Length", str(len(content)))
-                self.send_header("Cache-Control", "no-cache")
+                if filename.endswith(".html") or filename.endswith(".js") or filename.endswith(".css"):
+                    self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                    self.send_header("Pragma", "no-cache")
+                    self.send_header("Expires", "0")
+                else:
+                    self.send_header("Cache-Control", "public, max-age=86400")
                 self.end_headers()
                 self.wfile.write(content)
             else:
@@ -443,13 +490,27 @@ class BibleStudyHandler(http.server.SimpleHTTPRequestHandler):
             c.execute("SELECT * FROM study_journal WHERE user_id = ? AND day_number = ?", (user_data["id"], current_day))
             row = c.fetchone()
             progress = dict(row) if row else {"status": "pending", "personal_notes": "", "favorite_verse": ""}
-            matched_books = get_matching_books(day_data.get("tags", []))
+            matched_books = get_matching_books(day_data.get("tags", []), user_id=user_data["id"])
 
             # Livro de Cabeceira Oficial & Conexão Pastoral Diária
-            c.execute("SELECT * FROM books WHERE is_bedside = 1 LIMIT 1")
+            c.execute("""
+            SELECT b.*,
+                   COALESCE(ubs.status, 'Em Andamento') AS reading_status,
+                   COALESCE(ubs.personal_notes, '') AS user_notes
+            FROM books b
+            LEFT JOIN user_book_status ubs ON b.id = ubs.book_id AND ubs.user_id = ?
+            WHERE b.is_bedside = 1 LIMIT 1
+            """, (user_data["id"],))
             bedside_row = c.fetchone()
             if not bedside_row:
-                c.execute("SELECT * FROM books WHERE title LIKE '%Pastor Pentecostal%' LIMIT 1")
+                c.execute("""
+                SELECT b.*,
+                       COALESCE(ubs.status, 'Em Andamento') AS reading_status,
+                       COALESCE(ubs.personal_notes, '') AS user_notes
+                FROM books b
+                LEFT JOIN user_book_status ubs ON b.id = ubs.book_id AND ubs.user_id = ?
+                WHERE b.title LIKE '%Pastor Pentecostal%' LIMIT 1
+                """, (user_data["id"],))
                 bedside_row = c.fetchone()
             bedside_book = dict(bedside_row) if bedside_row else None
             pastoral_focus = get_pastoral_focus_for_day(day_data)
@@ -478,12 +539,26 @@ class BibleStudyHandler(http.server.SimpleHTTPRequestHandler):
                 c.execute("SELECT * FROM study_journal WHERE user_id = ? AND day_number = ?", (user_id, day_num))
                 row = c.fetchone()
                 progress = dict(row) if row else {"status": "pending", "personal_notes": "", "favorite_verse": ""}
-                matched_books = get_matching_books(day_data.get("tags", []))
+                matched_books = get_matching_books(day_data.get("tags", []), user_id=user_id)
 
-                c.execute("SELECT * FROM books WHERE is_bedside = 1 LIMIT 1")
+                c.execute("""
+                SELECT b.*,
+                       COALESCE(ubs.status, 'Em Andamento') AS reading_status,
+                       COALESCE(ubs.personal_notes, '') AS user_notes
+                FROM books b
+                LEFT JOIN user_book_status ubs ON b.id = ubs.book_id AND ubs.user_id = ?
+                WHERE b.is_bedside = 1 LIMIT 1
+                """, (user_id,))
                 bedside_row = c.fetchone()
                 if not bedside_row:
-                    c.execute("SELECT * FROM books WHERE title LIKE '%Pastor Pentecostal%' LIMIT 1")
+                    c.execute("""
+                    SELECT b.*,
+                           COALESCE(ubs.status, 'Em Andamento') AS reading_status,
+                           COALESCE(ubs.personal_notes, '') AS user_notes
+                    FROM books b
+                    LEFT JOIN user_book_status ubs ON b.id = ubs.book_id AND ubs.user_id = ?
+                    WHERE b.title LIKE '%Pastor Pentecostal%' LIMIT 1
+                    """, (user_id,))
                     bedside_row = c.fetchone()
                 bedside_book = dict(bedside_row) if bedside_row else None
                 pastoral_focus = get_pastoral_focus_for_day(day_data)
@@ -502,12 +577,91 @@ class BibleStudyHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json({"error": "ID do dia inválido"}, 400)
                 return
 
-        # 5. /api/books -> Lista de livros da biblioteca (Livro de Cabeceira em destaque no topo)
+        # 5. /api/books?user_id=X&status=Y&category=Z -> Lista de livros com status de leitura
         if path == "/api/books":
-            c.execute("SELECT * FROM books ORDER BY is_bedside DESC, id ASC")
+            status_filter = query.get("status", [None])[0]
+            cat_filter = query.get("category", [None])[0]
+
+            sql = """
+            SELECT b.*,
+                   COALESCE(ubs.status, 'Pendente') AS reading_status,
+                   COALESCE(ubs.personal_notes, '') AS user_notes,
+                   ubs.updated_at AS status_updated_at
+            FROM books b
+            LEFT JOIN user_book_status ubs ON b.id = ubs.book_id AND ubs.user_id = ?
+            """
+            params = [user_id]
+            conditions = []
+            if status_filter and status_filter != 'all':
+                conditions.append("COALESCE(ubs.status, 'Pendente') = ?")
+                params.append(status_filter)
+            if cat_filter and cat_filter != 'all':
+                conditions.append("b.category = ?")
+                params.append(cat_filter)
+
+            if conditions:
+                sql += " WHERE " + " AND ".join(conditions)
+
+            sql += """
+            ORDER BY b.is_bedside DESC,
+                     CASE COALESCE(ubs.status, 'Pendente')
+                         WHEN 'Em Andamento' THEN 1
+                         WHEN 'Pendente' THEN 2
+                         WHEN 'Finalizado' THEN 3
+                         ELSE 4 END,
+                     b.id ASC
+            """
+            c.execute(sql, params)
             books = [dict(row) for row in c.fetchall()]
+
+            # Contadores de status do usuário ativo
+            c.execute("""
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN COALESCE(ubs.status, 'Pendente') = 'Em Andamento' THEN 1 ELSE 0 END) as in_progress,
+                SUM(CASE WHEN COALESCE(ubs.status, 'Pendente') = 'Pendente' THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN COALESCE(ubs.status, 'Pendente') = 'Finalizado' THEN 1 ELSE 0 END) as completed
+            FROM books b
+            LEFT JOIN user_book_status ubs ON b.id = ubs.book_id AND ubs.user_id = ?
+            """, (user_id,))
+            crow = c.fetchone()
+            counts = {
+                "total": crow["total"] if crow else 90,
+                "in_progress": crow["in_progress"] or 0,
+                "pending": crow["pending"] or 0,
+                "completed": crow["completed"] or 0
+            }
+
             conn.close()
-            self.send_json(books)
+            self.send_json({
+                "books": books,
+                "counts": counts
+            })
+            return
+
+        # 5.1 /api/categories -> Categorias teológicas da biblioteca e seus vínculos com o plano
+        if path == "/api/categories":
+            c.execute("""
+            SELECT category, COUNT(*) as book_count, MIN(plan_link) as plan_link, MIN(plan_days) as plan_days
+            FROM books
+            GROUP BY category
+            ORDER BY 
+                CASE category
+                    WHEN 'Cabeceira & Ministério Pastoral' THEN 1
+                    WHEN 'Antigo Testamento, Pentateuco & Arqueologia' THEN 2
+                    WHEN 'Novo Testamento, Evangelhos & Vida de Cristo' THEN 3
+                    WHEN 'Teologia Sistemática, Doutrina & Hermenêutica' THEN 4
+                    WHEN 'Línguas Originais (Grego & Hebraico)' THEN 5
+                    WHEN 'Comentários & Manuais Bíblicos Panorâmicos' THEN 6
+                    WHEN 'História da Igreja Cristã' THEN 7
+                    WHEN 'Vida Cristã, Oração, Avivamento & Família' THEN 8
+                    WHEN 'Missões, Evangelização & Educação Cristã' THEN 9
+                    WHEN 'Liderança, Desenvolvimento & Sociedade' THEN 10
+                    ELSE 11 END ASC
+            """)
+            categories = [dict(row) for row in c.fetchall()]
+            conn.close()
+            self.send_json(categories)
             return
 
         # 6. /api/stats?user_id=X -> Estatísticas de progresso do usuário X
@@ -769,6 +923,35 @@ class BibleStudyHandler(http.server.SimpleHTTPRequestHandler):
                 conn.commit()
                 conn.close()
                 self.send_json({"success": True, "message": "Livro definido como Livro de Cabeceira Oficial!"})
+                return
+            except Exception as e:
+                conn.close()
+                self.send_json({"error": str(e)}, 500)
+                return
+
+        # 4.2 /api/books/<id>/status -> Alterar status de leitura do usuário (Pendente, Em Andamento, Finalizado)
+        if path.startswith("/api/books/") and path.endswith("/status"):
+            try:
+                parts = path.split("/")
+                book_id = int(parts[3])
+                user_id = int(data.get("user_id", 1))
+                new_status = data.get("status", "Pendente").strip()
+                notes = data.get("notes")
+
+                if new_status not in ["Pendente", "Em Andamento", "Finalizado"]:
+                    new_status = "Pendente"
+
+                c.execute("""
+                INSERT INTO user_book_status (user_id, book_id, status, personal_notes, updated_at)
+                VALUES (?, ?, ?, COALESCE(?, ''), CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id, book_id) DO UPDATE SET
+                    status = excluded.status,
+                    personal_notes = CASE WHEN ? IS NOT NULL THEN excluded.personal_notes ELSE user_book_status.personal_notes END,
+                    updated_at = CURRENT_TIMESTAMP
+                """, (user_id, book_id, new_status, notes, notes))
+                conn.commit()
+                conn.close()
+                self.send_json({"success": True, "book_id": book_id, "status": new_status, "user_id": user_id})
                 return
             except Exception as e:
                 conn.close()
